@@ -49,6 +49,8 @@ class MainWindow(QMainWindow):
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self._low_power_mode = False
         self._last_security_warning_ts = 0.0
+        self._hotspot_detected = False
+        self._effective_nonstandard_mode = False
 
         self._network_timer = QTimer(self)
         self._network_timer.setInterval(15000)
@@ -174,6 +176,10 @@ class MainWindow(QMainWindow):
         show_action.triggered.connect(self._show_window)
         tray_menu.addAction(show_action)
 
+        hotspot_action = QAction("Хот-спот Windows", self)
+        hotspot_action.triggered.connect(self._open_hotspot_settings)
+        tray_menu.addAction(hotspot_action)
+
         tray_menu.addSeparator()
 
         quit_action = QAction("Выход", self)
@@ -187,6 +193,28 @@ class MainWindow(QMainWindow):
     def _connect_signals(self):
         self.drop_zone.files_dropped.connect(self._on_files_dropped)
         self.device_list.device_selected.connect(self._on_device_selected)
+
+    @staticmethod
+    def _is_hotspot_ip(ip: str) -> bool:
+        return str(ip).startswith("192.168.137.")
+
+    def _detect_hotspot_environment(self) -> bool:
+        try:
+            probe = DeviceDiscovery(self.settings.port, compatibility_mode=False)
+            ips = probe._list_local_ipv4()  # local probe only, no network actions
+            return any(self._is_hotspot_ip(ip) for ip in ips)
+        except Exception:
+            return False
+
+    def _open_hotspot_settings(self):
+        try:
+            os.startfile("ms-settings:network-mobilehotspot")
+        except Exception:
+            QMessageBox.information(
+                self,
+                "V-Link",
+                "Откройте вручную:\nПараметры Windows -> Сеть и Интернет -> Мобильный хот-спот",
+            )
 
     def _refresh_devices(self):
         if self.discovery and self.loop:
@@ -291,7 +319,10 @@ class MainWindow(QMainWindow):
     async def start_services(self):
         self.loop = asyncio.get_event_loop()
         secure_mode = self.settings.secure_mode
-        compatibility_mode = self.settings.nonstandard_network_mode
+        manual_nonstandard_mode = self.settings.nonstandard_network_mode
+        self._hotspot_detected = self._detect_hotspot_environment()
+        compatibility_mode = manual_nonstandard_mode or self._hotspot_detected
+        self._effective_nonstandard_mode = compatibility_mode
         relay_mode = self.settings.relay_mode
         relay_url = self.settings.relay_server_url
         auth_secret = SECURE_SHARED_SECRET if secure_mode else ""
@@ -373,6 +404,9 @@ class MainWindow(QMainWindow):
         if relay_mode and not relay_url:
             self.status_label.setText("● Активен (Relay включён, но URL не задан)")
             self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
+        elif self._hotspot_detected and not manual_nonstandard_mode:
+            self.status_label.setText("● Активен (обнаружен хот-спот, включён совместимый режим)")
+            self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
         elif compatibility_mode and relay_ready:
             self.status_label.setText("● Активен (нестандартные сети + Relay)")
             self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
@@ -633,8 +667,8 @@ class MainWindow(QMainWindow):
                                 candidates.append(candidate)
 
             ranked: list[tuple[str, int]] = []
-            ping_timeout = 3.5 if self.settings.nonstandard_network_mode else 2.0
-            ping_retries = 2 if self.settings.nonstandard_network_mode else 1
+            ping_timeout = 3.5 if self._effective_nonstandard_mode else 2.0
+            ping_retries = 2 if self._effective_nonstandard_mode else 1
             for candidate_ip, candidate_port in candidates:
                 ok = await self.client.ping(candidate_ip, candidate_port, timeout=ping_timeout, retries=ping_retries)
                 if ok:
@@ -704,6 +738,7 @@ class MainWindow(QMainWindow):
             "• Устройства в разных сетях\n"
             "• Сеть с изоляцией клиентов (guest/AP isolation) запрещает прямые подключения\n"
             "• Для вузов/хотспотов включите «Режим нестандартных сетей» в настройках\n"
+            "• Если один ноутбук раздаёт Wi‑Fi, профиль хот-спота включается автоматически\n"
             "• Relay-режим нужен только как дополнительный вариант, если прямой режим недоступен"
             f"{device_info}",
         )

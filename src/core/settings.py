@@ -14,7 +14,7 @@ DEFAULT_SETTINGS = {
     'port': 8765,
     'download_dir': str(Path.home() / "Downloads" / "V-Link"),
     'secure_mode': False,
-    'nonstandard_network_mode': False,
+    'nonstandard_network_mode': True,
     'relay_mode': False,
     'relay_server_url': '',
     'relay_channel': 'default',
@@ -104,7 +104,7 @@ class Settings:
 
     @property
     def nonstandard_network_mode(self) -> bool:
-        return bool(self.get('nonstandard_network_mode', False))
+        return bool(self.get('nonstandard_network_mode', True))
 
     @property
     def relay_mode(self) -> bool:

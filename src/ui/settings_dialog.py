@@ -118,6 +118,7 @@ class SettingsDialog(QDialog):
         self.nonstandard_network_check = CheckBoxWithMark(
             "Режим нестандартных сетей (вуз/гостевой Wi-Fi/хотспот)"
         )
+        self.nonstandard_network_check.setChecked(True)
         network_layout.addWidget(self.nonstandard_network_check)
 
         network_hint = QLabel(
@@ -257,7 +258,7 @@ class SettingsDialog(QDialog):
         self.port_spin.setValue(self.settings.get('port', 8765))
         self.download_edit.setText(self.settings.get('download_dir', ''))
         self.secure_mode_check.setChecked(self.settings.get('secure_mode', False))
-        self.nonstandard_network_check.setChecked(self.settings.get('nonstandard_network_mode', False))
+        self.nonstandard_network_check.setChecked(self.settings.get('nonstandard_network_mode', True))
         self.relay_mode_check.setChecked(self.settings.get('relay_mode', False))
         self.relay_url_edit.setText(self.settings.get('relay_server_url', ''))
         self.relay_channel_edit.setText(self.settings.get('relay_channel', 'default'))

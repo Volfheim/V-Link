@@ -81,6 +81,12 @@ class DeviceDiscovery:
         except ValueError:
             return False
 
+    def _is_hotspot_ip(self, ip: str) -> bool:
+        return str(ip).startswith("192.168.137.")
+
+    def _is_hotspot_environment(self) -> bool:
+        return any(self._is_hotspot_ip(ip) for ip in self.get_local_ips())
+
     def _list_local_ipv4(self) -> List[str]:
         ips: set[str] = set()
 
@@ -139,13 +145,15 @@ class DeviceDiscovery:
                 return (9, ip)
             if not addr.is_private:
                 return (8, ip)
+            if self._is_hotspot_ip(ip):
+                return (0, ip)  # Windows mobile hotspot subnet
             if ip.startswith("192.168."):
-                return (0, ip)  # typical home LAN
+                return (1, ip)  # typical home LAN
             if ip.startswith("10."):
-                return (1, ip)
+                return (2, ip)
             if ip.startswith("172."):
-                return (2, ip)  # often VPN or corporate segment
-            return (3, ip)
+                return (3, ip)  # often VPN or corporate segment
+            return (4, ip)
 
         filtered.sort(key=ip_rank)
         return filtered
@@ -432,6 +440,7 @@ class DeviceDiscovery:
     def _scan_window_candidates(self) -> set[str]:
         local_set = set(self.get_local_ips())
         candidates: set[str] = set()
+        hotspot_env = self._is_hotspot_environment()
         for local_ip in local_set:
             try:
                 addr = ipaddress.ip_address(local_ip)
@@ -443,7 +452,8 @@ class DeviceDiscovery:
                     continue
                 key = str(net)
                 cursor = int(self._scan_cursor.get(key, 0)) % len(hosts)
-                window = min(48, len(hosts))
+                # On hotspot / isolated Wi-Fi, scan a larger sliding window for faster peer pickup.
+                window = min(120 if hotspot_env else 48, len(hosts))
                 for i in range(window):
                     candidate = hosts[(cursor + i) % len(hosts)]
                     if candidate not in local_set:
@@ -517,7 +527,7 @@ class DeviceDiscovery:
                 self._cleanup_stale_compat_devices()
             except Exception:
                 pass
-            await asyncio.sleep(COMPAT_PROBE_INTERVAL)
+            await asyncio.sleep(8.0 if self._is_hotspot_environment() else COMPAT_PROBE_INTERVAL)
 
     def _cleanup_stale_compat_devices(self):
         now = time.monotonic()
@@ -639,15 +649,17 @@ class DeviceDiscovery:
         def score(ip: str) -> tuple[int, str]:
             if in_same_subnet(ip):
                 return (0, ip)
-            if ip.startswith("192.168."):
+            if self._is_hotspot_ip(ip):
                 return (1, ip)
-            if ip.startswith("10."):
+            if ip.startswith("192.168."):
                 return (2, ip)
-            if ip.startswith("172."):
+            if ip.startswith("10."):
                 return (3, ip)
-            if self._is_private_ip(ip):
+            if ip.startswith("172."):
                 return (4, ip)
-            return (5, ip)
+            if self._is_private_ip(ip):
+                return (5, ip)
+            return (6, ip)
 
         return sorted(ips, key=score)
 
