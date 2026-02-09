@@ -243,17 +243,19 @@ class DeviceDiscovery:
             return ""
 
         async def can_connect(ip: str) -> bool:
-            try:
-                conn = asyncio.open_connection(ip, port)
-                r, w = await asyncio.wait_for(conn, timeout=0.35)
-                w.close()
+            for _ in range(2):
                 try:
-                    await w.wait_closed()
+                    conn = asyncio.open_connection(ip, port)
+                    r, w = await asyncio.wait_for(conn, timeout=0.8)
+                    w.close()
+                    try:
+                        await w.wait_closed()
+                    except Exception:
+                        pass
+                    return True
                 except Exception:
-                    pass
-                return True
-            except Exception:
-                return False
+                    continue
+            return False
 
         local_ips = self.get_local_ips()
 
@@ -292,7 +294,7 @@ class DeviceDiscovery:
         for ip in ordered:
             if await can_connect(ip):
                 return ip
-        return ordered[0]
+        return ""
 
     async def _on_service_found(self, zc: Zeroconf, type_: str, name: str):
         from zeroconf.asyncio import AsyncServiceInfo
@@ -316,6 +318,9 @@ class DeviceDiscovery:
                         return
 
                     selected_ip = await self._pick_reachable_ip(ips, info.port)
+                    if not selected_ip:
+                        # Do not show unreachable peers as online devices.
+                        return
 
                     self.devices[name] = {
                         'name': device_name,

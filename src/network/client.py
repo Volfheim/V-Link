@@ -250,7 +250,8 @@ class TransferClient:
             total=None,
             connect=8,
             sock_connect=8,
-            sock_read=10,  # fail fast when receiver is not responsive
+            # Keep read timeout open for long/slow links; connectivity is validated by ping/connect.
+            sock_read=None,
         )
 
         async with self.session.post(url, data=file_sender(), headers=headers, timeout=request_timeout) as resp:
