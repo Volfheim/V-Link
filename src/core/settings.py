@@ -13,6 +13,7 @@ DEFAULT_SETTINGS = {
     'port': 8765,
     'download_dir': str(Path.home() / "Downloads" / "V-Link"),
     'secure_mode': False,
+    'nonstandard_network_mode': False,
     'adaptive_profile': {},
     'autostart': False,
     'start_minimized': False,
@@ -95,4 +96,8 @@ class Settings:
     @property
     def autostart(self) -> bool:
         return bool(self.get('autostart', False))
+
+    @property
+    def nonstandard_network_mode(self) -> bool:
+        return bool(self.get('nonstandard_network_mode', False))
 

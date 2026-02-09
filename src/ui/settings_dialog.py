@@ -113,6 +113,20 @@ class SettingsDialog(QDialog):
         port_layout.addWidget(self.port_spin)
         port_layout.addStretch()
         network_layout.addLayout(port_layout)
+
+        self.nonstandard_network_check = CheckBoxWithMark(
+            "Режим нестандартных сетей (вуз/гостевой Wi-Fi/хотспот)"
+        )
+        network_layout.addWidget(self.nonstandard_network_check)
+
+        network_hint = QLabel(
+            "Использует совместимый режим обнаружения и передачи для сетей, "
+            "где multicast/mDNS может быть ограничен."
+        )
+        network_hint.setWordWrap(True)
+        network_hint.setStyleSheet("color: #64748b; font-size: 11px;")
+        network_layout.addWidget(network_hint)
+
         content_layout.addWidget(network_group)
 
         storage_group = QGroupBox("Хранилище")
@@ -208,6 +222,7 @@ class SettingsDialog(QDialog):
         self.port_spin.setValue(self.settings.get('port', 8765))
         self.download_edit.setText(self.settings.get('download_dir', ''))
         self.secure_mode_check.setChecked(self.settings.get('secure_mode', False))
+        self.nonstandard_network_check.setChecked(self.settings.get('nonstandard_network_mode', False))
         self.minimize_check.setChecked(self.settings.get('start_minimized', False))
         self.autostart_check.setChecked(self.settings.get('autostart', False))
         self.close_to_tray_check.setChecked(self.settings.get('close_to_tray', True))
@@ -217,6 +232,7 @@ class SettingsDialog(QDialog):
             'port': self.port_spin.value(),
             'download_dir': self.download_edit.text(),
             'secure_mode': self.secure_mode_check.isChecked(),
+            'nonstandard_network_mode': self.nonstandard_network_check.isChecked(),
             'start_minimized': self.minimize_check.isChecked(),
             'autostart': self.autostart_check.isChecked(),
             'close_to_tray': self.close_to_tray_check.isChecked(),

@@ -195,6 +195,7 @@ class MainWindow(QMainWindow):
     def _open_settings(self):
         old_port = self.settings.port
         old_secure_mode = self.settings.secure_mode
+        old_nonstandard_mode = self.settings.nonstandard_network_mode
         old_dir = self.settings.download_dir
         old_autostart = self.settings.autostart
 
@@ -214,6 +215,7 @@ class MainWindow(QMainWindow):
         restart_needed = (
             old_port != self.settings.port
             or old_secure_mode != self.settings.secure_mode
+            or old_nonstandard_mode != self.settings.nonstandard_network_mode
             or old_dir != self.settings.download_dir
         )
         if restart_needed and self.loop:
@@ -271,6 +273,7 @@ class MainWindow(QMainWindow):
     async def start_services(self):
         self.loop = asyncio.get_event_loop()
         secure_mode = self.settings.secure_mode
+        compatibility_mode = self.settings.nonstandard_network_mode
         auth_secret = SECURE_SHARED_SECRET if secure_mode else ""
         verify_checksum = secure_mode
 
@@ -278,7 +281,7 @@ class MainWindow(QMainWindow):
             self.settings.port,
             self.settings.download_dir,
             auth_token=auth_secret,
-            chunk_size_bytes=4 * 1024 * 1024,
+            chunk_size_bytes=512 * 1024 if compatibility_mode else 4 * 1024 * 1024,
             verify_checksum=verify_checksum,
             enable_encryption=secure_mode,
         )
@@ -289,7 +292,7 @@ class MainWindow(QMainWindow):
         self.server.on_server_error = self._on_server_error
         actual_port = await self.server.start()
 
-        self.discovery = DeviceDiscovery(actual_port)
+        self.discovery = DeviceDiscovery(actual_port, compatibility_mode=compatibility_mode)
         self.discovery.on_device_added = self._on_device_added
         self.discovery.on_device_removed = self._on_device_removed
         self.discovery.on_error = self._on_server_error
@@ -297,11 +300,12 @@ class MainWindow(QMainWindow):
 
         self.client = TransferClient(
             auth_token=auth_secret,
-            base_chunk_size_bytes=4 * 1024 * 1024,
+            base_chunk_size_bytes=512 * 1024 if compatibility_mode else 4 * 1024 * 1024,
             verify_checksum=verify_checksum,
-            auto_tune=True,
+            auto_tune=not compatibility_mode,
             adaptive_profile=self.settings.adaptive_profile,
             enable_encryption=secure_mode,
+            compatibility_mode=compatibility_mode,
         )
         self.client.on_transfer_start = self._on_outgoing_transfer_start
         self.client.on_transfer_progress = self._on_transfer_progress
@@ -310,7 +314,10 @@ class MainWindow(QMainWindow):
         await self.client.start()
 
         self._update_ip_label()
-        self.status_label.setText("● Активен")
+        if compatibility_mode:
+            self.status_label.setText("● Активен (режим нестандартных сетей)")
+        else:
+            self.status_label.setText("● Активен")
         self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
 
         if not self._network_timer.isActive():
@@ -433,8 +440,10 @@ class MainWindow(QMainWindow):
 
             # Quick availability ranking, but don't block on ping-only failures.
             ranked: list[tuple[str, int]] = []
+            ping_timeout = 3.5 if self.settings.nonstandard_network_mode else 2.0
+            ping_retries = 2 if self.settings.nonstandard_network_mode else 1
             for candidate_ip, candidate_port in candidates:
-                ok = await self.client.ping(candidate_ip, candidate_port, timeout=2.0, retries=1)
+                ok = await self.client.ping(candidate_ip, candidate_port, timeout=ping_timeout, retries=ping_retries)
                 if ok:
                     ranked.insert(0, (candidate_ip, candidate_port))
                 else:

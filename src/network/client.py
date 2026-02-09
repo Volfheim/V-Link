@@ -50,12 +50,14 @@ class TransferClient:
         auto_tune: bool = True,
         adaptive_profile: Optional[dict] = None,
         enable_encryption: bool = False,
+        compatibility_mode: bool = False,
     ):
         self.auth_token = (auth_token or "").strip()
         self.base_chunk_size_bytes = max(64 * 1024, int(base_chunk_size_bytes))
         self.verify_checksum = verify_checksum
         self.auto_tune = auto_tune
         self.enable_encryption = enable_encryption
+        self.compatibility_mode = compatibility_mode
         self._cipher: Optional[Fernet] = None
         if self.enable_encryption and self.auth_token:
             key = hashlib.sha256(self.auth_token.encode("utf-8")).digest()
@@ -90,8 +92,12 @@ class TransferClient:
     async def _ensure_session(self):
         async with self._session_lock:
             if self.session is None or self.session.closed:
-                timeout = aiohttp.ClientTimeout(total=None, connect=20, sock_read=120)
-                connector = aiohttp.TCPConnector(limit=16, force_close=False, enable_cleanup_closed=True)
+                timeout = aiohttp.ClientTimeout(total=None, connect=20, sock_read=None)
+                connector = aiohttp.TCPConnector(
+                    limit=12 if self.compatibility_mode else 16,
+                    force_close=self.compatibility_mode,
+                    enable_cleanup_closed=True,
+                )
                 self.session = aiohttp.ClientSession(timeout=timeout, connector=connector)
 
     async def stop(self):
@@ -248,8 +254,8 @@ class TransferClient:
         url = f"http://{host}:{port}/upload"
         request_timeout = aiohttp.ClientTimeout(
             total=None,
-            connect=8,
-            sock_connect=8,
+            connect=12 if self.compatibility_mode else 8,
+            sock_connect=12 if self.compatibility_mode else 8,
             # Keep read timeout open for long/slow links; connectivity is validated by ping/connect.
             sock_read=None,
         )
@@ -285,6 +291,10 @@ class TransferClient:
         await asyncio.gather(*(send_one(filepath) for filepath in filepaths))
 
     async def _build_plan(self, filepaths: List[str]) -> TransferPlan:
+        if self.compatibility_mode:
+            # More conservative transport profile for restrictive Wi-Fi (guest/campus/hotspot).
+            return TransferPlan(chunk_size=512 * 1024, parallel_uploads=1, use_lz4=False)
+
         if not self.auto_tune:
             return TransferPlan(self.base_chunk_size_bytes, 1, False)
 
