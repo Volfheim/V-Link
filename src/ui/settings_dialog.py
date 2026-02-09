@@ -176,6 +176,11 @@ class SettingsDialog(QDialog):
         scroll.setWidget(content)
         root_layout.addWidget(scroll)
 
+        footer = QLabel("Powered by Volfheim")
+        footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        footer.setStyleSheet("color: #64748b; font-size: 11px;")
+        root_layout.addWidget(footer)
+
         buttons = QHBoxLayout()
         buttons.addStretch()
 

@@ -1,21 +1,36 @@
-﻿MIT License
+﻿Volfheim Non-Commercial License v1.0
 
 Copyright (c) 2026 Volfheim
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Grant of Use
+You are allowed to use this software for personal and non-commercial purposes only.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+2. Commercial Use
+Any commercial use, including but not limited to paid distribution, paid services,
+or business/internal corporate deployment, requires prior written permission
+from the copyright holder (Volfheim).
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+3. Modification and Derivative Works
+You may not modify, adapt, translate, reverse engineer, or create derivative works
+based on this software without prior written permission from Volfheim.
+
+4. Redistribution
+You may not redistribute this software (source or binary), in whole or in part,
+without prior written permission from Volfheim.
+
+5. Attribution
+Where use is permitted by this license, you must keep clear attribution:
+"Powered by Volfheim" and retain this license text.
+
+6. No Warranty
+This software is provided "as is", without warranty of any kind, express or implied,
+including but not limited to merchantability, fitness for a particular purpose,
+and non-infringement.
+
+7. Limitation of Liability
+In no event shall the author be liable for any claim, damages, or other liability,
+whether in an action of contract, tort, or otherwise, arising from or in connection
+with the software or the use of this software.
+
+8. Termination
+Any violation of this license automatically terminates your rights under it.

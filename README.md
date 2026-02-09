@@ -52,4 +52,4 @@ python build.py
 
 ## 📄 Лицензия
 
-- [MIT License](LICENSE)
+- [Volfheim Non-Commercial License v1.0](LICENSE)
