@@ -1,67 +1,55 @@
-# V-Link ⚡
+﻿# V-Link
 
-**V-Link** — это современное, быстрое и безопасное приложение для передачи файлов в локальной сети. Разработано с фокусом на простоту использования, скорость и безопасность передачи данных.
+V-Link is a desktop app for fast file transfer between devices in the same local network.
 
-![V-Link App Icon](src/resources/app_icon.png)
+## Key Features
 
-## ✨ Основные возможности
+- High-speed transfer with async streaming and adaptive chunk size.
+- Secure mode (optional): stream encryption, integrity checks, and authentication.
+- Smart discovery with mDNS/Zeroconf and fallback IP routing.
+- VPN-tolerant behavior in mixed home-network scenarios.
+- Low-power background mode.
+- Tray mode and Windows autostart support.
 
-*   🚀 **Высокая скорость**: Использование асинхронной передачи (aiohttp) и адаптивного размера чанков.
-*   🔒 **Безопасность**:
-    *   Полноценный **Безопасный режим** с шифрованием потока (Fernet).
-    *   Проверка целостности файлов (SHA-256).
-    *   Аутентификация по токенам.
-*   🔍 **Smart Discovery**:
-    *   Автоматическое обнаружение устройств (mDNS/Zeroconf).
-    *   Поддержка работы через VPN и сложные сетевые конфигурации.
-    *   Fallback-маршрутизация (автоматический перебор доступных IP/портов).
-*   🔋 **Эффективность**:
-    *   Low-power режим при сворачивании.
-    *   Минимальное потребление ресурсов в фоне.
-*   🛠 **Удобство**:
-    *   Автозапуск вместе с Windows.
-    *   Сворачивание в трей.
-    *   Интуитивный Drag-and-Drop интерфейс.
-    *   История передач (в разработке).
+## Download
 
-## 📥 Установка
+- Releases: https://github.com/Volfheim/V-Link/releases
 
-### Скачать готовую версию
-Актуальная версия доступна в разделе [Releases](https://github.com/yourusername/V-Link/releases).
+## Run From Source
 
-### Запуск из исходного кода
+```bash
+git clone https://github.com/Volfheim/V-Link.git
+cd V-Link
+pip install -r requirements.txt
+python src/main.py
+```
 
-1.  **Клонируйте репозиторий:**
-    ```bash
-    git clone https://github.com/yourusername/V-Link.git
-    cd V-Link
-    ```
+## Build
 
-2.  **Установите зависимости:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+```bash
+python build.py
+```
 
-3.  **Запустите приложение:**
-    ```bash
-    python src/main.py
-    ```
+The built executable appears in `dist/`.
 
-## 🛠 Технологический стек
+## Tech Stack
 
-*   **Язык**: Python 3.13
-*   **GUI**: PyQt6
-*   **Сеть**: aiohttp, zeroconf, qasync
-*   **Безопасность**: cryptography (Fernet)
-*   **Сборка**: PyInstaller
+- Python 3.13
+- PyQt6
+- aiohttp
+- zeroconf
+- qasync
+- cryptography (Fernet)
+- PyInstaller
 
-## 📝 История изменений
+## Changelog
 
-Подробная история изменений доступна в файле [CHANGELOG.md](CHANGELOG.md).
+- See `CHANGELOG.md`.
 
-## 👨‍💻 Автор
+## Author
 
-**Volfheim**
+- Volfheim
 
----
-*(c) 2026 Volfheim. Все права защищены.*
+## License
+
+- See `LICENSE`.
