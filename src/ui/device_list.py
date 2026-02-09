@@ -191,8 +191,12 @@ class DeviceCard(QFrame):
         layout.setContentsMargins(12, 0, 12, 0)
         layout.setSpacing(12)
 
-        icon_text = "IP" if self.is_manual else "PC"
-        tooltip = "Ручное подключение" if self.is_manual else "Устройство в сети"
+        if self._is_relay():
+            icon_text = "RLY"
+            tooltip = "Relay-устройство"
+        else:
+            icon_text = "IP" if self.is_manual else "PC"
+            tooltip = "Ручное подключение" if self.is_manual else "Устройство в сети"
 
         icon = QLabel(icon_text)
         icon.setToolTip(tooltip)
@@ -215,7 +219,7 @@ class DeviceCard(QFrame):
         self.name_label.setStyleSheet("font-weight: bold; font-size: 13px; color: #f8fafc; background: transparent;")
         layout.addWidget(self.name_label)
 
-        self.ip_label = QLabel(f"{self.device_ip}:{self.device_port}")
+        self.ip_label = QLabel(self._format_endpoint())
         self.ip_label.setStyleSheet("font-size: 11px; color: #64748b; background: transparent; padding-top: 2px;")
         layout.addWidget(self.ip_label)
 
@@ -232,10 +236,18 @@ class DeviceCard(QFrame):
         self.device_port = port
         self.is_online = is_online
         self.name_label.setText(name)
-        self.ip_label.setText(f"{ip}:{port}")
+        self.ip_label.setText(self._format_endpoint())
         self.status.setText("OK" if is_online else "--")
         color = '#22c55e' if is_online else '#64748b'
         self.status.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: bold; background: transparent;")
+
+    def _is_relay(self) -> bool:
+        return isinstance(self.device_ip, str) and self.device_ip.startswith("relay:")
+
+    def _format_endpoint(self) -> str:
+        if self._is_relay():
+            return "relay-cloud"
+        return f"{self.device_ip}:{self.device_port}"
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:

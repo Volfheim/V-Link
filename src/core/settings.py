@@ -5,6 +5,7 @@ V-Link - Settings Manager
 
 import json
 import os
+import uuid
 from pathlib import Path
 from typing import Any, Dict
 
@@ -14,6 +15,10 @@ DEFAULT_SETTINGS = {
     'download_dir': str(Path.home() / "Downloads" / "V-Link"),
     'secure_mode': False,
     'nonstandard_network_mode': False,
+    'relay_mode': False,
+    'relay_server_url': '',
+    'relay_channel': 'default',
+    'relay_client_id': '',
     'adaptive_profile': {},
     'autostart': False,
     'start_minimized': False,
@@ -100,4 +105,27 @@ class Settings:
     @property
     def nonstandard_network_mode(self) -> bool:
         return bool(self.get('nonstandard_network_mode', False))
+
+    @property
+    def relay_mode(self) -> bool:
+        return bool(self.get('relay_mode', False))
+
+    @property
+    def relay_server_url(self) -> str:
+        return str(self.get('relay_server_url', '') or '').strip()
+
+    @property
+    def relay_channel(self) -> str:
+        value = str(self.get('relay_channel', 'default') or '').strip()
+        return value or 'default'
+
+    @property
+    def relay_client_id(self) -> str:
+        current = str(self.get('relay_client_id', '') or '').strip()
+        if current:
+            return current
+        generated = uuid.uuid4().hex[:16]
+        self.settings['relay_client_id'] = generated
+        self._save()
+        return generated
 

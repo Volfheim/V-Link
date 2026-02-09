@@ -6,7 +6,7 @@ import asyncio
 import os
 import sys
 import time
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from PyQt6.QtCore import Q_ARG, QMetaObject, Qt, QTimer, pyqtSlot
 from PyQt6.QtGui import QAction, QCloseEvent, QIcon
@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core import Settings, set_autostart
-from network import DeviceDiscovery, TransferClient, TransferServer
+from network import DeviceDiscovery, RelayClient, TransferClient, TransferServer
 from ui import DeviceList, DropZone, TransferList, get_stylesheet
 from ui.settings_dialog import SettingsDialog
 
@@ -43,6 +43,8 @@ class MainWindow(QMainWindow):
         self.discovery: Optional[DeviceDiscovery] = None
         self.server: Optional[TransferServer] = None
         self.client: Optional[TransferClient] = None
+        self.relay: Optional[RelayClient] = None
+        self.relay_peers: Dict[str, Dict] = {}
         self.selected_device: Optional[tuple] = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self._low_power_mode = False
@@ -189,13 +191,24 @@ class MainWindow(QMainWindow):
     def _refresh_devices(self):
         if self.discovery and self.loop:
             self.device_list.clear_devices()
+            self.selected_device = None
             self.status_label.setText("● Обновление...")
-            asyncio.run_coroutine_threadsafe(self.discovery.refresh(), self.loop)
+            async def do_refresh():
+                await self.discovery.refresh()
+                if self.relay:
+                    try:
+                        await self.relay.refresh_peers()
+                    except Exception as e:
+                        self._on_server_error(f"Relay refresh error: {e}")
+            asyncio.run_coroutine_threadsafe(do_refresh(), self.loop)
 
     def _open_settings(self):
         old_port = self.settings.port
         old_secure_mode = self.settings.secure_mode
         old_nonstandard_mode = self.settings.nonstandard_network_mode
+        old_relay_mode = self.settings.relay_mode
+        old_relay_url = self.settings.relay_server_url
+        old_relay_channel = self.settings.relay_channel
         old_dir = self.settings.download_dir
         old_autostart = self.settings.autostart
 
@@ -216,6 +229,9 @@ class MainWindow(QMainWindow):
             old_port != self.settings.port
             or old_secure_mode != self.settings.secure_mode
             or old_nonstandard_mode != self.settings.nonstandard_network_mode
+            or old_relay_mode != self.settings.relay_mode
+            or old_relay_url != self.settings.relay_server_url
+            or old_relay_channel != self.settings.relay_channel
             or old_dir != self.settings.download_dir
         )
         if restart_needed and self.loop:
@@ -267,13 +283,17 @@ class MainWindow(QMainWindow):
     @pyqtSlot()
     def _on_ip_refresh(self):
         self._update_ip_label()
-        if not self._low_power_mode:
+        if self.status_label.text().startswith("● Relay"):
+            return
+        if not self._low_power_mode and not (self.settings.relay_mode and not self.settings.relay_server_url):
             self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
 
     async def start_services(self):
         self.loop = asyncio.get_event_loop()
         secure_mode = self.settings.secure_mode
         compatibility_mode = self.settings.nonstandard_network_mode
+        relay_mode = self.settings.relay_mode
+        relay_url = self.settings.relay_server_url
         auth_secret = SECURE_SHARED_SECRET if secure_mode else ""
         verify_checksum = secure_mode
 
@@ -313,12 +333,58 @@ class MainWindow(QMainWindow):
         self.client.on_transfer_error = self._on_transfer_error
         await self.client.start()
 
+        self.relay_peers.clear()
+        relay_ready = False
+        if relay_mode and relay_url:
+            try:
+                self.relay = RelayClient(
+                    server_url=relay_url,
+                    channel=self.settings.relay_channel,
+                    client_id=self.settings.relay_client_id,
+                    display_name=self.discovery.get_hostname() if self.discovery else "V-Link",
+                    download_dir=self.settings.download_dir,
+                    secure_mode=secure_mode,
+                    auth_token=auth_secret,
+                )
+                self.relay.on_peer_added = self._on_relay_peer_added
+                self.relay.on_peer_removed = self._on_relay_peer_removed
+                self.relay.on_error = self._on_server_error
+                self.relay.on_transfer_start = self._on_relay_transfer_start
+                self.relay.on_transfer_progress = self._on_transfer_progress
+                self.relay.on_transfer_complete = self._on_transfer_complete
+                self.relay.on_transfer_error = self._on_transfer_error
+                await self.relay.start()
+                relay_ready = True
+            except Exception as e:
+                self._on_server_error(f"Relay init error: {e}")
+                if self.relay:
+                    try:
+                        await self.relay.stop()
+                    except Exception:
+                        pass
+                self.relay = None
+                self.relay_peers.clear()
+                self._clear_relay_devices()
+        else:
+            self.relay = None
+            self._clear_relay_devices()
+
         self._update_ip_label()
-        if compatibility_mode:
+        if relay_mode and not relay_url:
+            self.status_label.setText("● Активен (Relay включён, но URL не задан)")
+            self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
+        elif compatibility_mode and relay_ready:
+            self.status_label.setText("● Активен (нестандартные сети + Relay)")
+            self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+        elif compatibility_mode:
             self.status_label.setText("● Активен (режим нестандартных сетей)")
+            self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+        elif relay_ready:
+            self.status_label.setText("● Активен (Relay)")
+            self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
         else:
             self.status_label.setText("● Активен")
-        self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+            self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
 
         if not self._network_timer.isActive():
             self._network_timer.start()
@@ -326,6 +392,11 @@ class MainWindow(QMainWindow):
     async def stop_services(self):
         if self._network_timer.isActive():
             self._network_timer.stop()
+
+        if self.relay:
+            await self.relay.stop()
+            self.relay = None
+            self.relay_peers.clear()
 
         if self.client:
             await self.client.stop()
@@ -349,6 +420,8 @@ class MainWindow(QMainWindow):
             await self.client.stop()
         if self.discovery:
             await self.discovery.pause_browsing()
+        if self.relay:
+            self.relay.set_low_power_mode(True)
 
         self.transfer_list.set_low_power_mode(True)
         self.status_label.setText("● Фон: экономия ресурсов")
@@ -363,6 +436,8 @@ class MainWindow(QMainWindow):
             await self.client.start()
         if self.discovery:
             await self.discovery.resume_browsing()
+        if self.relay:
+            self.relay.set_low_power_mode(False)
 
         if not self._network_timer.isActive():
             self._network_timer.start()
@@ -372,8 +447,12 @@ class MainWindow(QMainWindow):
         self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
 
     def _on_server_error(self, error: str):
-        self.status_label.setText("● Ошибка")
-        self.status_label.setStyleSheet("color: #ef4444; font-size: 12px;")
+        if "Relay" in (error or ""):
+            self.status_label.setText("● Relay временно недоступен")
+            self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
+        else:
+            self.status_label.setText("● Ошибка")
+            self.status_label.setStyleSheet("color: #ef4444; font-size: 12px;")
         print(error)
 
     def _on_device_added(self, name: str, ip: str, port: int):
@@ -388,6 +467,8 @@ class MainWindow(QMainWindow):
         )
 
     def _on_device_removed(self, name: str, ip: str):
+        if self.selected_device and self.selected_device[1] == ip:
+            self.selected_device = None
         QMetaObject.invokeMethod(
             self.device_list,
             "remove_device",
@@ -395,10 +476,68 @@ class MainWindow(QMainWindow):
             Q_ARG(str, ip),
         )
 
+    def _on_relay_peer_added(self, peer: Dict):
+        peer_id = str(peer.get("id", "")).strip()
+        if not peer_id:
+            return
+
+        self.relay_peers[peer_id] = dict(peer)
+        peer_name = str(peer.get("name", "")).strip() or peer_id
+
+        QMetaObject.invokeMethod(
+            self.device_list,
+            "add_device",
+            Qt.ConnectionType.QueuedConnection,
+            Q_ARG(str, f"[Relay] {peer_name}"),
+            Q_ARG(str, f"relay:{peer_id}"),
+            Q_ARG(int, 0),
+            Q_ARG(bool, True),
+        )
+
+    def _on_relay_peer_removed(self, peer: Dict):
+        peer_id = str(peer.get("id", "")).strip()
+        if not peer_id:
+            return
+        self.relay_peers.pop(peer_id, None)
+        relay_ip = f"relay:{peer_id}"
+        if self.selected_device and self.selected_device[1] == relay_ip:
+            self.selected_device = None
+
+        QMetaObject.invokeMethod(
+            self.device_list,
+            "remove_device",
+            Qt.ConnectionType.QueuedConnection,
+            Q_ARG(str, relay_ip),
+        )
+
+    @pyqtSlot()
+    def _clear_relay_devices(self):
+        if self.selected_device and str(self.selected_device[1]).startswith("relay:"):
+            self.selected_device = None
+            self.device_list.clear_selection()
+        relay_ips = [
+            card.device_ip
+            for card in list(self.device_list.devices)
+            if str(card.device_ip).startswith("relay:")
+        ]
+        for relay_ip in relay_ips:
+            self.device_list.remove_device(relay_ip)
+
+    def _relay_peer_from_selection(self) -> Optional[str]:
+        if not self.selected_device:
+            return None
+        _name, ip, _port = self.selected_device
+        if isinstance(ip, str) and ip.startswith("relay:"):
+            return ip.split(":", 1)[1].strip() or None
+        return None
+
     @pyqtSlot(str, str, int)
     def _on_device_selected(self, name: str, ip: str, port: int):
         self.selected_device = (name, ip, port)
-        self.status_label.setText(f"● Выбрано: {name}")
+        if str(ip).startswith("relay:"):
+            self.status_label.setText(f"● Выбрано Relay: {name}")
+        else:
+            self.status_label.setText(f"● Выбрано: {name}")
 
     @pyqtSlot(list)
     def _on_files_dropped(self, files: List[str]):
@@ -425,6 +564,28 @@ class MainWindow(QMainWindow):
         name, ip, port = self.selected_device
 
         async def send_with_ping():
+            relay_peer_id = self._relay_peer_from_selection()
+            if relay_peer_id:
+                if not self.relay or not self.relay.has_peer(relay_peer_id):
+                    QMetaObject.invokeMethod(self, "_show_relay_unavailable", Qt.ConnectionType.QueuedConnection)
+                    return
+                try:
+                    self.status_label.setText("● Передача через Relay...")
+                    await self.relay.send_files(valid_files, relay_peer_id, target_name=name)
+                    return
+                except Exception as e:
+                    relay_error = str(e)
+                    if self._is_security_mismatch_error(relay_error):
+                        QMetaObject.invokeMethod(self, "_show_security_mismatch_warning", Qt.ConnectionType.QueuedConnection)
+                        return
+                    QMetaObject.invokeMethod(
+                        self,
+                        "_show_transfer_failed",
+                        Qt.ConnectionType.QueuedConnection,
+                        Q_ARG(str, f"Relay: {relay_error}"),
+                    )
+                    return
+
             if not self.client:
                 return
 
@@ -438,7 +599,6 @@ class MainWindow(QMainWindow):
                             if candidate not in candidates:
                                 candidates.append(candidate)
 
-            # Quick availability ranking, but don't block on ping-only failures.
             ranked: list[tuple[str, int]] = []
             ping_timeout = 3.5 if self.settings.nonstandard_network_mode else 2.0
             ping_retries = 2 if self.settings.nonstandard_network_mode else 1
@@ -462,6 +622,17 @@ class MainWindow(QMainWindow):
                 except Exception as e:
                     last_error = str(e)
                     continue
+
+            if self.relay:
+                relay_peer_id = self.relay.find_peer_by_name(name)
+                if relay_peer_id and self.relay.has_peer(relay_peer_id):
+                    try:
+                        self.status_label.setText("● Прямой маршрут недоступен, пробуем Relay...")
+                        await self.relay.send_files(valid_files, relay_peer_id, target_name=name)
+                        self.selected_device = (name, f"relay:{relay_peer_id}", 0)
+                        return
+                    except Exception as e:
+                        last_error = str(e)
 
             if last_error:
                 if self._is_security_mismatch_error(last_error):
@@ -498,8 +669,24 @@ class MainWindow(QMainWindow):
             "• V-Link не запущен на другом устройстве\n"
             "• Брандмауэр или VPN блокируют соединение\n"
             "• Устройства в разных сетях\n"
-            "• Сеть с изоляцией клиентов (guest/AP isolation) запрещает прямые подключения"
+            "• Сеть с изоляцией клиентов (guest/AP isolation) запрещает прямые подключения\n"
+            "• Для такой сети включите Relay-режим в настройках"
             f"{device_info}",
+        )
+        self.selected_device = None
+        self.device_list.clear_selection()
+        self.status_label.setText("● Готов к работе")
+
+    @pyqtSlot()
+    def _show_relay_unavailable(self):
+        QMessageBox.warning(
+            self,
+            "V-Link",
+            "Relay-устройство недоступно.\n\n"
+            "Проверьте:\n"
+            "• Оба устройства онлайн и подключены к одному Relay-каналу\n"
+            "• Relay URL одинаковый на обоих устройствах\n"
+            "• Relay-сервер запущен",
         )
         self.selected_device = None
         self.device_list.clear_selection()
@@ -514,6 +701,12 @@ class MainWindow(QMainWindow):
         item = self.transfer_list.add_transfer(transfer_id, filename, total_size, True)
         if self._low_power_mode:
             item.set_low_power_mode(True)
+
+    def _on_relay_transfer_start(self, transfer_id: str, filename: str, total_size: int, is_upload: bool):
+        if is_upload:
+            self._on_outgoing_transfer_start(transfer_id, filename, total_size, is_upload)
+        else:
+            self._on_incoming_transfer_start(transfer_id, filename, total_size, is_upload)
 
     def _on_transfer_progress(self, transfer_id: str, transferred: int, speed: float):
         self.transfer_list.update_transfer(transfer_id, transferred, speed)
@@ -534,6 +727,8 @@ class MainWindow(QMainWindow):
             "unauthorized" in lower
             or "401" in lower
             or "encrypted mode is not enabled on receiver" in lower
+            or "security mode mismatch" in lower
+            or "secure_mode_mismatch" in lower
         )
 
     def _is_connectivity_error(self, error: str) -> bool:

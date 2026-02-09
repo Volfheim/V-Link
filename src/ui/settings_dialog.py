@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -29,8 +30,8 @@ class SettingsDialog(QDialog):
         self.settings = settings
 
         self.setWindowTitle("Настройки")
-        self.setMinimumSize(700, 660)
-        self.resize(760, 700)
+        self.setMinimumSize(720, 700)
+        self.resize(780, 740)
         self.setSizeGripEnabled(False)
         self.setStyleSheet(
             """
@@ -126,6 +127,38 @@ class SettingsDialog(QDialog):
         network_hint.setWordWrap(True)
         network_hint.setStyleSheet("color: #64748b; font-size: 11px;")
         network_layout.addWidget(network_hint)
+
+        self.relay_mode_check = CheckBoxWithMark(
+            "Relay-режим для сетей с изоляцией клиентов (через сервер)"
+        )
+        self.relay_mode_check.toggled.connect(self._toggle_relay_fields)
+        network_layout.addWidget(self.relay_mode_check)
+
+        relay_url_row = QHBoxLayout()
+        relay_url_label = QLabel("Relay URL:")
+        relay_url_label.setMinimumWidth(180)
+        relay_url_row.addWidget(relay_url_label)
+        self.relay_url_edit = QLineEdit()
+        self.relay_url_edit.setPlaceholderText("http://your-relay-host:8090")
+        relay_url_row.addWidget(self.relay_url_edit)
+        network_layout.addLayout(relay_url_row)
+
+        relay_channel_row = QHBoxLayout()
+        relay_channel_label = QLabel("Канал (одинаковый на обоих ПК):")
+        relay_channel_label.setMinimumWidth(180)
+        relay_channel_row.addWidget(relay_channel_label)
+        self.relay_channel_edit = QLineEdit()
+        self.relay_channel_edit.setPlaceholderText("default")
+        relay_channel_row.addWidget(self.relay_channel_edit)
+        network_layout.addLayout(relay_channel_row)
+
+        relay_hint = QLabel(
+            "Используется только если прямое подключение в сети недоступно. "
+            "Может быть медленнее обычного LAN-режима."
+        )
+        relay_hint.setWordWrap(True)
+        relay_hint.setStyleSheet("color: #64748b; font-size: 11px;")
+        network_layout.addWidget(relay_hint)
 
         content_layout.addWidget(network_group)
 
@@ -223,16 +256,37 @@ class SettingsDialog(QDialog):
         self.download_edit.setText(self.settings.get('download_dir', ''))
         self.secure_mode_check.setChecked(self.settings.get('secure_mode', False))
         self.nonstandard_network_check.setChecked(self.settings.get('nonstandard_network_mode', False))
+        self.relay_mode_check.setChecked(self.settings.get('relay_mode', False))
+        self.relay_url_edit.setText(self.settings.get('relay_server_url', ''))
+        self.relay_channel_edit.setText(self.settings.get('relay_channel', 'default'))
         self.minimize_check.setChecked(self.settings.get('start_minimized', False))
         self.autostart_check.setChecked(self.settings.get('autostart', False))
         self.close_to_tray_check.setChecked(self.settings.get('close_to_tray', True))
+        self._toggle_relay_fields(self.relay_mode_check.isChecked())
+
+    def _toggle_relay_fields(self, enabled: bool):
+        self.relay_url_edit.setEnabled(enabled)
+        self.relay_channel_edit.setEnabled(enabled)
 
     def _save_and_close(self):
+        relay_url = self.relay_url_edit.text().strip()
+        relay_channel = self.relay_channel_edit.text().strip() or "default"
+        if self.relay_mode_check.isChecked() and not relay_url:
+            QMessageBox.warning(
+                self,
+                "V-Link",
+                "Для Relay-режима укажите Relay URL.",
+            )
+            return
+
         self.settings.set_many({
             'port': self.port_spin.value(),
             'download_dir': self.download_edit.text(),
             'secure_mode': self.secure_mode_check.isChecked(),
             'nonstandard_network_mode': self.nonstandard_network_check.isChecked(),
+            'relay_mode': self.relay_mode_check.isChecked(),
+            'relay_server_url': relay_url,
+            'relay_channel': relay_channel,
             'start_minimized': self.minimize_check.isChecked(),
             'autostart': self.autostart_check.isChecked(),
             'close_to_tray': self.close_to_tray_check.isChecked(),
