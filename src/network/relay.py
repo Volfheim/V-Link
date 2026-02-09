@@ -113,10 +113,19 @@ class RelayClient:
 
         self._running = True
         await self._ensure_session()
-        await self._sync_presence()
-
         self._presence_task = asyncio.create_task(self._presence_loop())
         self._inbox_task = asyncio.create_task(self._inbox_loop())
+        # Non-blocking warm-up: do not delay app startup on relay handshake.
+        asyncio.create_task(self._initial_sync())
+
+    async def _initial_sync(self):
+        if not self._running:
+            return
+        try:
+            await self._sync_presence()
+        except Exception as e:
+            if self.on_error:
+                self.on_error(f"Relay startup sync error: {e}")
 
     async def stop(self):
         self._running = False

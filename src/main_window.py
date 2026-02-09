@@ -51,6 +51,9 @@ class MainWindow(QMainWindow):
         self._last_security_warning_ts = 0.0
         self._hotspot_detected = False
         self._effective_nonstandard_mode = False
+        self._services_ready = False
+        self._services_starting = False
+        self._quitting = False
 
         self._network_timer = QTimer(self)
         self._network_timer.setInterval(15000)
@@ -156,6 +159,18 @@ class MainWindow(QMainWindow):
         status.addWidget(self.ip_label)
 
         return status
+
+    def show_startup_state(self, message: str = "● Запуск сервисов..."):
+        self.status_label.setText(message)
+        self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
+
+    @pyqtSlot()
+    def _show_services_starting(self):
+        QMessageBox.information(
+            self,
+            "V-Link",
+            "Сетевые сервисы ещё запускаются. Попробуйте через пару секунд.",
+        )
 
     def _setup_tray(self):
         self.tray_icon = QSystemTrayIcon(self)
@@ -317,6 +332,8 @@ class MainWindow(QMainWindow):
             self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
 
     async def start_services(self):
+        self._services_starting = True
+        self._services_ready = False
         self.loop = asyncio.get_event_loop()
         secure_mode = self.settings.secure_mode
         manual_nonstandard_mode = self.settings.nonstandard_network_mode
@@ -423,7 +440,12 @@ class MainWindow(QMainWindow):
         if not self._network_timer.isActive():
             self._network_timer.start()
 
+        self._services_ready = True
+        self._services_starting = False
+
     async def stop_services(self):
+        self._services_ready = False
+        self._services_starting = False
         if self._network_timer.isActive():
             self._network_timer.stop()
 
@@ -605,6 +627,12 @@ class MainWindow(QMainWindow):
     def _on_files_dropped(self, files: List[str]):
         if self._low_power_mode and self.loop:
             asyncio.run_coroutine_threadsafe(self.exit_low_power_mode(), self.loop)
+            QMetaObject.invokeMethod(self, "_show_services_starting", Qt.ConnectionType.QueuedConnection)
+            return
+
+        if self._services_starting or not self._services_ready:
+            QMetaObject.invokeMethod(self, "_show_services_starting", Qt.ConnectionType.QueuedConnection)
+            return
 
         if not self.selected_device:
             fallback_selected = self.device_list.get_selected_device()
@@ -876,13 +904,27 @@ class MainWindow(QMainWindow):
         if self.loop:
             asyncio.run_coroutine_threadsafe(self.exit_low_power_mode(), self.loop)
 
+    @pyqtSlot()
+    def _finalize_quit(self):
+        QApplication.quit()
+
     def _quit_app(self):
+        if self._quitting:
+            return
+        self._quitting = True
+        self.status_label.setText("● Завершение...")
+        self.status_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        self.tray_icon.hide()
+
         if self.loop:
             future = asyncio.run_coroutine_threadsafe(self.stop_services(), self.loop)
-            try:
-                future.result(timeout=2)
-            except Exception:
-                pass
+            future.add_done_callback(
+                lambda _f: QMetaObject.invokeMethod(
+                    self,
+                    "_finalize_quit",
+                    Qt.ConnectionType.QueuedConnection,
+                )
+            )
+            return
 
-        self.tray_icon.hide()
-        QApplication.quit()
+        self._finalize_quit()

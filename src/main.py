@@ -36,6 +36,11 @@ def main():
     asyncio.set_event_loop(loop)
 
     window = MainWindow()
+    if window.settings.start_minimized:
+        window.hide()
+    else:
+        window.show()
+    window.show_startup_state()
 
     async def bootstrap():
         try:
@@ -43,8 +48,6 @@ def main():
             if window.settings.start_minimized:
                 window.hide()
                 await window.enter_low_power_mode()
-            else:
-                window.show()
         except Exception as e:
             try:
                 await window.stop_services()
