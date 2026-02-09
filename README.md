@@ -1,21 +1,21 @@
-﻿# V-Link
+﻿# V-Link ⚡
 
-V-Link is a desktop app for fast file transfer between devices in the same local network.
+**V-Link** — быстрое и удобное приложение для передачи файлов между устройствами в одной локальной сети.
 
-## Key Features
+## ✨ Возможности
 
-- High-speed transfer with async streaming and adaptive chunk size.
-- Secure mode (optional): stream encryption, integrity checks, and authentication.
-- Smart discovery with mDNS/Zeroconf and fallback IP routing.
-- VPN-tolerant behavior in mixed home-network scenarios.
-- Low-power background mode.
-- Tray mode and Windows autostart support.
+- 🚀 **Высокая скорость**: асинхронная передача и адаптивные параметры потока.
+- 🔒 **Безопасный режим (опционально)**: шифрование, проверка целостности и аутентификация.
+- 🔎 **Умное обнаружение устройств**: mDNS/Zeroconf + fallback по альтернативным IP.
+- 🌐 **Стабильность в сложной сети**: работа в сценариях с VPN и несколькими интерфейсами.
+- 🔋 **Low-power режим**: минимальная нагрузка в фоне.
+- 🪟 **Удобство Windows**: трей-режим, автозапуск, drag-and-drop.
 
-## Download
+## 📦 Скачать
 
-- Releases: https://github.com/Volfheim/V-Link/releases
+- Актуальные версии: [GitHub Releases](https://github.com/Volfheim/V-Link/releases)
 
-## Run From Source
+## 🧰 Запуск из исходников
 
 ```bash
 git clone https://github.com/Volfheim/V-Link.git
@@ -24,15 +24,15 @@ pip install -r requirements.txt
 python src/main.py
 ```
 
-## Build
+## 🏗 Сборка
 
 ```bash
 python build.py
 ```
 
-The built executable appears in `dist/`.
+Готовый `.exe` будет в папке `dist/`.
 
-## Tech Stack
+## 🧪 Технологии
 
 - Python 3.13
 - PyQt6
@@ -42,14 +42,14 @@ The built executable appears in `dist/`.
 - cryptography (Fernet)
 - PyInstaller
 
-## Changelog
+## 📝 Изменения
 
-- See `CHANGELOG.md`.
+- Подробная история: [CHANGELOG.md](CHANGELOG.md)
 
-## Author
+## 👨‍💻 Автор
 
-- Volfheim
+- **Volfheim**
 
-## License
+## 📄 Лицензия
 
-- See `LICENSE`.
+- [MIT License](LICENSE)
