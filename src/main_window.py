@@ -456,6 +456,20 @@ class MainWindow(QMainWindow):
         print(error)
 
     def _on_device_added(self, name: str, ip: str, port: int):
+        is_online = True
+        if self.discovery:
+            try:
+                for device in self.discovery.get_devices().values():
+                    if (
+                        str(device.get("name", "")) == name
+                        and str(device.get("ip", "")) == ip
+                        and int(device.get("port", 0) or 0) == int(port)
+                    ):
+                        is_online = bool(device.get("reachable", True))
+                        break
+            except Exception:
+                is_online = True
+
         QMetaObject.invokeMethod(
             self.device_list,
             "add_device",
@@ -463,7 +477,7 @@ class MainWindow(QMainWindow):
             Q_ARG(str, name),
             Q_ARG(str, ip),
             Q_ARG(int, port),
-            Q_ARG(bool, True),
+            Q_ARG(bool, is_online),
         )
 
     def _on_device_removed(self, name: str, ip: str):
@@ -537,7 +551,21 @@ class MainWindow(QMainWindow):
         if str(ip).startswith("relay:"):
             self.status_label.setText(f"● Выбрано Relay: {name}")
         else:
-            self.status_label.setText(f"● Выбрано: {name}")
+            is_online = True
+            if self.discovery:
+                for device in self.discovery.get_devices().values():
+                    if (
+                        str(device.get("name", "")) == name
+                        and str(device.get("ip", "")) == ip
+                        and int(device.get("port", 0) or 0) == int(port)
+                    ):
+                        is_online = bool(device.get("reachable", True))
+                        break
+            if is_online:
+                self.status_label.setText(f"● Выбрано: {name}")
+            else:
+                self.status_label.setText(f"● Выбрано: {name} (может быть недоступно)")
+                self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
 
     @pyqtSlot(list)
     def _on_files_dropped(self, files: List[str]):
@@ -592,7 +620,12 @@ class MainWindow(QMainWindow):
             candidates: list[tuple[str, int]] = [(ip, port)]
             if self.discovery:
                 for device in self.discovery.get_devices().values():
-                    if device.get('name') == name:
+                    same_name = device.get('name') == name
+                    same_endpoint = (
+                        str(device.get('ip', '')) == str(ip)
+                        and int(device.get('port', port) or port) == int(port)
+                    )
+                    if same_name or same_endpoint:
                         dev_port = int(device.get('port', port) or port)
                         for alt_ip in device.get('ips', []):
                             candidate = (alt_ip, dev_port)
@@ -664,13 +697,14 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(
             self,
             "V-Link",
-            "Устройство не отвечает.\n\n"
+            "Устройство обнаружено, но сейчас не отвечает.\n\n"
             "Возможные причины:\n"
             "• V-Link не запущен на другом устройстве\n"
             "• Брандмауэр или VPN блокируют соединение\n"
             "• Устройства в разных сетях\n"
             "• Сеть с изоляцией клиентов (guest/AP isolation) запрещает прямые подключения\n"
-            "• Для такой сети включите Relay-режим в настройках"
+            "• Для вузов/хотспотов включите «Режим нестандартных сетей» в настройках\n"
+            "• Relay-режим нужен только как дополнительный вариант, если прямой режим недоступен"
             f"{device_info}",
         )
         self.selected_device = None

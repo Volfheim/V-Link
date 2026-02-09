@@ -2,6 +2,20 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [1.8.2] - 2026-02-10
+### Fixes & UX
+* Раздел `Сеть` в окне настроек перенесён вниз (после остальных разделов).
+* Таймер передачи больше не показывает миллисекунды: для коротких передач отображается `<1 сек`, что убирает визуальный рассинхрон между устройствами.
+* Нестандартный режим и сообщения об ошибках уточнены: акцент на локальный режим без relay-сервера.
+* Улучшен сбор альтернативных IP-кандидатов при отправке (по имени и endpoint), чтобы снизить ложные недоступности.
+
+## [1.8.1] - 2026-02-10
+### Fixes
+* Discovery no longer hides peers only because temporary ping failed.
+* Devices can stay visible as "may be unavailable", then show warning only on actual transfer attempt.
+* Relaxed strict reachability filter for mDNS/compatibility paths.
+* Improved Relay settings hints with clear examples for `Relay URL` and `Channel`.
+
 ## [1.8.0] - 2026-02-10
 ### 🔥 Главное
 * Добавлен полноценный **Relay-режим** для сетей, где прямые подключения между клиентами блокируются (campus/guest Wi-Fi, AP isolation).

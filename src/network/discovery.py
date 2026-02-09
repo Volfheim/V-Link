@@ -174,7 +174,16 @@ class DeviceDiscovery:
             return True
         return False
 
-    def _upsert_device(self, key: str, name: str, ip: str, ips: List[str], port: int, source: str):
+    def _upsert_device(
+        self,
+        key: str,
+        name: str,
+        ip: str,
+        ips: List[str],
+        port: int,
+        source: str,
+        reachable: bool = True,
+    ):
         now = time.monotonic()
         previous = self.devices.get(key)
         self.devices[key] = {
@@ -183,6 +192,7 @@ class DeviceDiscovery:
             'ips': list(ips),
             'port': int(port),
             'source': source,
+            'reachable': bool(reachable),
             'last_seen': now,
         }
 
@@ -191,6 +201,7 @@ class DeviceDiscovery:
             or previous.get('ip') != ip
             or int(previous.get('port', 0)) != int(port)
             or previous.get('name') != name
+            or bool(previous.get('reachable', True)) != bool(reachable)
         )
         if changed and self.on_device_added:
             self.on_device_added(name, ip, int(port))
@@ -473,7 +484,7 @@ class DeviceDiscovery:
         if self._is_self_candidate(name, remote_port, [ip], sender_ip=ip):
             return False
 
-        selected_ip = await self._pick_reachable_ip([ip], remote_port)
+        selected_ip, reachable = await self._pick_preferred_ip([ip], remote_port)
         if not selected_ip:
             return False
 
@@ -484,6 +495,7 @@ class DeviceDiscovery:
             ips=[selected_ip],
             port=remote_port,
             source="compat-scan",
+            reachable=reachable,
         )
         return True
 
@@ -585,7 +597,7 @@ class DeviceDiscovery:
         if self._is_self_candidate(name, port, candidates, sender_ip=sender_ip):
             return
 
-        selected_ip = await self._pick_reachable_ip(candidates, port)
+        selected_ip, reachable = await self._pick_preferred_ip(candidates, port)
         if not selected_ip:
             return
 
@@ -596,26 +608,14 @@ class DeviceDiscovery:
             ips=candidates,
             port=port,
             source="compat-udp",
+            reachable=reachable,
         )
 
         if packet_type == "announce" and sender_ip:
             sender_port = int(addr[1]) if addr and len(addr) > 1 else COMPAT_UDP_PORT
             await self._send_compat_packet("response", (sender_ip, sender_port))
 
-    async def _pick_reachable_ip(self, ips: List[str], port: int) -> str:
-        if not ips:
-            return ""
-
-        async def can_connect(ip: str) -> bool:
-            for _ in range(2):
-                try:
-                    pong = await self._http_get_json(ip, port, "/ping", timeout=1.0)
-                    if isinstance(pong, dict) and str(pong.get("status", "")).lower() == "ok":
-                        return True
-                except Exception:
-                    continue
-            return False
-
+    def _rank_candidate_ips(self, ips: List[str]) -> List[str]:
         local_ips = self.get_local_ips()
 
         def in_same_subnet(candidate: str) -> bool:
@@ -649,11 +649,34 @@ class DeviceDiscovery:
                 return (4, ip)
             return (5, ip)
 
-        ordered = sorted(ips, key=score)
+        return sorted(ips, key=score)
+
+    async def _pick_preferred_ip(self, ips: List[str], port: int) -> tuple[str, bool]:
+        if not ips:
+            return "", False
+
+        async def can_connect(ip: str) -> bool:
+            for _ in range(2):
+                try:
+                    pong = await self._http_get_json(ip, port, "/ping", timeout=1.0)
+                    if isinstance(pong, dict) and str(pong.get("status", "")).lower() == "ok":
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        ordered = self._rank_candidate_ips(ips)
         for ip in ordered:
             if await can_connect(ip):
-                return ip
-        return ""
+                return ip, True
+
+        # Keep device visible even if currently unreachable.
+        # Availability is rechecked before transfer.
+        return ordered[0], False
+
+    async def _pick_reachable_ip(self, ips: List[str], port: int) -> str:
+        selected, _reachable = await self._pick_preferred_ip(ips, port)
+        return selected
 
     async def _on_service_found(self, zc: Zeroconf, type_: str, name: str):
         from zeroconf.asyncio import AsyncServiceInfo
@@ -678,9 +701,8 @@ class DeviceDiscovery:
                     if self._is_self_candidate(device_name, info.port, ips):
                         return
 
-                    selected_ip = await self._pick_reachable_ip(ips, info.port)
+                    selected_ip, reachable = await self._pick_preferred_ip(ips, info.port)
                     if not selected_ip:
-                        # Do not show unreachable peers as online devices.
                         return
 
                     self._upsert_device(
@@ -690,6 +712,7 @@ class DeviceDiscovery:
                         ips=ips,
                         port=info.port,
                         source="mdns",
+                        reachable=reachable,
                     )
                     return
 

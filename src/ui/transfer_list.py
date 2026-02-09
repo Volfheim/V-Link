@@ -30,7 +30,7 @@ class TransferItem(QFrame):
         self.total_size = total_size
         self.is_upload = is_upload
         self.transferred = 0
-        self.start_time = time.time()
+        self.start_time = time.perf_counter()
         self.end_time = None
         self.filepath = None
         self.state = "in_progress"
@@ -122,7 +122,7 @@ class TransferItem(QFrame):
         layout.addLayout(bottom_row)
 
     def _update_time(self):
-        elapsed = (self.end_time - self.start_time) if self.end_time else (time.time() - self.start_time)
+        elapsed = (self.end_time - self.start_time) if self.end_time else (time.perf_counter() - self.start_time)
         self.time_label.setText(self._format_time(elapsed))
 
     def update_progress(self, transferred: int, speed: float):
@@ -133,7 +133,7 @@ class TransferItem(QFrame):
 
     def mark_complete(self):
         self.timer.stop()
-        self.end_time = time.time()
+        self.end_time = time.perf_counter()
         self.state = "completed"
         elapsed = self.end_time - self.start_time
 
@@ -155,7 +155,7 @@ class TransferItem(QFrame):
 
     def mark_error(self, error: str):
         self.timer.stop()
-        self.end_time = time.time()
+        self.end_time = time.perf_counter()
         self.state = "error"
         self.status_label.setText("Ошибка")
         self.status_label.setStyleSheet("color: #ef4444; font-size: 11px; font-weight: bold;")
@@ -194,12 +194,10 @@ class TransferItem(QFrame):
 
     @staticmethod
     def _format_time(seconds: float) -> str:
-        if seconds < 0.2:
-            return "<0.2 сек"
         if seconds < 1:
-            return f"{seconds:.2f} сек"
+            return "<1 сек"
         if seconds < 60:
-            return f"{seconds:.1f} сек"
+            return f"{int(round(seconds))} сек"
         if seconds < 3600:
             mins = int(seconds // 60)
             secs = int(seconds % 60)

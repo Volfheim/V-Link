@@ -121,8 +121,8 @@ class SettingsDialog(QDialog):
         network_layout.addWidget(self.nonstandard_network_check)
 
         network_hint = QLabel(
-            "Использует совместимый режим обнаружения и передачи для сетей, "
-            "где multicast/mDNS может быть ограничен."
+            "Основной режим для вузовских/гостевых Wi‑Fi и хотспотов. "
+            "Не требует relay-сервера и работает в пределах локальной сети."
         )
         network_hint.setWordWrap(True)
         network_hint.setStyleSheet("color: #64748b; font-size: 11px;")
@@ -139,7 +139,8 @@ class SettingsDialog(QDialog):
         relay_url_label.setMinimumWidth(180)
         relay_url_row.addWidget(relay_url_label)
         self.relay_url_edit = QLineEdit()
-        self.relay_url_edit.setPlaceholderText("http://your-relay-host:8090")
+        self.relay_url_edit.setPlaceholderText("http://192.168.1.10:8090 или https://relay.example.com")
+        self.relay_url_edit.setToolTip("Адрес запущенного relay-сервера")
         relay_url_row.addWidget(self.relay_url_edit)
         network_layout.addLayout(relay_url_row)
 
@@ -148,19 +149,19 @@ class SettingsDialog(QDialog):
         relay_channel_label.setMinimumWidth(180)
         relay_channel_row.addWidget(relay_channel_label)
         self.relay_channel_edit = QLineEdit()
-        self.relay_channel_edit.setPlaceholderText("default")
+        self.relay_channel_edit.setPlaceholderText("например: home, pgtu, group-a")
+        self.relay_channel_edit.setToolTip("Одинаковое имя канала на обоих устройствах")
         relay_channel_row.addWidget(self.relay_channel_edit)
         network_layout.addLayout(relay_channel_row)
 
         relay_hint = QLabel(
-            "Используется только если прямое подключение в сети недоступно. "
-            "Может быть медленнее обычного LAN-режима."
+            "Требуется отдельный relay-сервер (локальный ПК/NAS/VPS). "
+            "Используется, когда прямое подключение в сети недоступно. "
+            "Обычно медленнее, чем прямой LAN-режим."
         )
         relay_hint.setWordWrap(True)
         relay_hint.setStyleSheet("color: #64748b; font-size: 11px;")
         network_layout.addWidget(relay_hint)
-
-        content_layout.addWidget(network_group)
 
         storage_group = QGroupBox("Хранилище")
         storage_layout = QVBoxLayout(storage_group)
@@ -218,6 +219,7 @@ class SettingsDialog(QDialog):
         behavior_layout.addWidget(auto_mode)
 
         content_layout.addWidget(behavior_group)
+        content_layout.addWidget(network_group)
         content_layout.addStretch()
 
         scroll.setWidget(content)
