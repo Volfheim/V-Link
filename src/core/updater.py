@@ -98,6 +98,12 @@ class Updater:
                 parts.append(0)
         return tuple(parts)
 
+    def _update_dir(self) -> Path:
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if not local_app_data:
+            local_app_data = os.path.expanduser("~\\AppData\\Local")
+        return Path(local_app_data) / "V-Link" / "updates"
+
     async def check_for_update(self, force: bool = False) -> Optional[UpdateInfo]:
         """Check GitHub for a newer release. Returns UpdateInfo or None."""
         if self._checking:
@@ -107,48 +113,57 @@ class Updater:
 
         self._checking = True
         try:
-            timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(GITHUB_API_LATEST) as resp:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(GITHUB_API_LATEST, timeout=10) as resp:
                     if resp.status != 200:
                         return None
                     data = await resp.json()
 
-            tag = data.get("tag_name", "")
-            body = data.get("body", "")
-
-            remote = self._parse_version(tag)
-            local = self._parse_version(__version__)
-
-            self.settings.set("last_update_check", datetime.now().isoformat())
-
-            if remote <= local:
-                self._info = None
+            tag_name = data.get("tag_name", "")
+            if not tag_name:
                 return None
 
+            remote_ver = self._parse_version(tag_name)
+            local_ver = self._parse_version(__version__)
+
+            # Simple comparison tuple vs tuple
+            if remote_ver <= local_ver:
+                self.settings.set("last_update_check", datetime.now().isoformat())
+                return None
+
+            # Check if skipped
             skipped = self.settings.get("skipped_version", "")
-            if skipped and skipped == tag and not force:
+            if not force and skipped == tag_name:
                 return None
 
+            assets = data.get("assets", [])
             download_url = ""
-            asset_name = ""
             asset_size = 0
-            for asset in data.get("assets", []):
-                name = asset.get("name", "")
-                if name.lower().endswith(".exe"):
-                    download_url = asset.get("browser_download_url", "")
-                    asset_name = name
+            asset_name = ""
+
+            for asset in assets:
+                name = asset.get("name", "").lower()
+                if name.endswith(".exe") and "setup" not in name:
+                    download_url = asset.get("browser_download_url")
                     asset_size = asset.get("size", 0)
+                    asset_name = asset.get("name", "")
                     break
 
             if not download_url:
                 return None
 
-            self._info = UpdateInfo(tag, download_url, body, asset_name, asset_size)
-
+            self._info = UpdateInfo(
+                version=tag_name,
+                download_url=download_url,
+                body=data.get("body", ""),
+                asset_name=asset_name,
+                asset_size=asset_size,
+            )
+            self.settings.set("last_update_check", datetime.now().isoformat())
+            
             if self.on_update_available:
-                self.on_update_available(tag, body)
-
+                self.on_update_available(self._info.version, self._info.body)
+            
             return self._info
 
         except Exception:
@@ -160,45 +175,43 @@ class Updater:
     # Download
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _update_dir() -> Path:
-        base = Path(os.environ.get("LOCALAPPDATA") or Path.home())
-        return base / "V-Link" / "updates"
-
-    async def download_update(self) -> Optional[Path]:
-        """Download the update EXE. Returns path on success."""
-        if not self._info or self._downloading:
+    async def download_update(self):
+        """Download asset to %LOCALAPPDATA%/V-Link/updates/."""
+        if self._downloading: 
+            return None
+        if not self._info:
+            if self.on_error:
+                self.on_error("Нет информации об обновлении")
             return None
 
         self._downloading = True
-        update_dir = self._update_dir()
-        update_dir.mkdir(parents=True, exist_ok=True)
-
-        # Clean previous downloads
-        for f in update_dir.iterdir():
-            try:
-                f.unlink()
-            except Exception:
-                pass
-
-        target = update_dir / self._info.asset_name
-
         try:
-            timeout = aiohttp.ClientTimeout(total=600)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            update_dir = self._update_dir()
+            update_dir.mkdir(parents=True, exist_ok=True)
+            target = update_dir / "latest.exe"
+
+            # Clean previous
+            if target.exists():
+                try:
+                    target.unlink()
+                except Exception:
+                    pass
+
+            async with aiohttp.ClientSession() as session:
                 async with session.get(self._info.download_url) as resp:
                     if resp.status != 200:
-                        raise RuntimeError(f"HTTP {resp.status}")
-
-                    total = self._info.asset_size or int(resp.headers.get("Content-Length", 0))
-                    received = 0
-
-                    with open(target, "wb") as f:
-                        async for chunk in resp.content.iter_chunked(256 * 1024):
+                        raise RuntimeError(f"HTTP Error {resp.status}")
+                    
+                    total_size = int(resp.headers.get('Content-Length', 0))
+                    downloaded = 0
+                    
+                    with open(target, 'wb') as f:
+                        async for chunk in resp.content.iter_chunked(65536):
                             f.write(chunk)
-                            received += len(chunk)
-                            if total > 0 and self.on_download_progress:
-                                self.on_download_progress(min(100, int(received * 100 / total)))
+                            downloaded += len(chunk)
+                            if total_size > 0 and self.on_download_progress:
+                                pct = int(downloaded / total_size * 100)
+                                self.on_download_progress(pct)
 
             # Strict size check
             if not target.exists():
@@ -222,7 +235,6 @@ class Updater:
 
             if self.on_update_ready:
                 self.on_update_ready(str(target))
-
             return target
 
         except Exception as e:
@@ -242,84 +254,99 @@ class Updater:
     # ------------------------------------------------------------------
 
     def apply_update(self, downloaded_exe: Path):
-        """Create a bat helper, launch it, and signal the app to quit."""
+        """Safely apply update using atomic rename strategy (Windows + PyInstaller safe)."""
         if not self.is_frozen():
             return
 
         current_exe = Path(sys.executable).resolve()
         current_pid = os.getpid()
+
         update_dir = self._update_dir()
         bat_path = update_dir / "_v-link-update.bat"
-        old_exe = current_exe.parent / (current_exe.stem + ".old")
 
-        # Strip Windows Zone.Identifier to prevent Defender from blocking
-        # the extracted DLLs when the new EXE launches.
-        try:
-            ads_path = str(downloaded_exe) + ":Zone.Identifier"
-            if os.path.exists(ads_path):
-                os.remove(ads_path)
-        except Exception:
-            pass
+        old_exe = current_exe.with_suffix(".old")
+        new_exe = current_exe.with_suffix(".new")
 
-        # If autostart is on, we need to refresh the registry entry
+        # Autostart flag preserved for future use
         autostart_flag = "1" if self.settings.get("autostart", False) else "0"
 
-        # Use copy+del instead of move to avoid cross-drive issues.
-        # move /Y silently fails or corrupts PyInstaller EXEs when
-        # source (%LOCALAPPDATA%) and destination are on different drives.
-        bat = (
-            '@echo off\r\n'
-            'chcp 65001 >nul 2>&1\r\n'
-            '\r\n'
-            ':: Wait for V-Link to exit\r\n'
-            ':wait\r\n'
-            f'tasklist /FI "PID eq {current_pid}" 2>NUL | find "{current_pid}" >NUL\r\n'
-            'if %ERRORLEVEL%==0 (\r\n'
-            '    timeout /t 1 /nobreak >NUL\r\n'
-            '    goto wait\r\n'
-            ')\r\n'
-            '\r\n'
-            ':: Extra delay for file handles to be released\r\n'
-            'timeout /t 3 /nobreak >NUL\r\n'
-            '\r\n'
-            ':: Remove previous .old if exists\r\n'
-            f'if exist "{old_exe}" del /f /q "{old_exe}"\r\n'
-            '\r\n'
-            ':: Rename running exe to .old\r\n'
-            f'move /Y "{current_exe}" "{old_exe}"\r\n'
-            '\r\n'
-            ':: Unblock the new file again (just in case)\r\n'
-            f'powershell -Command "Unblock-File -Path \'{downloaded_exe}\'" >NUL 2>&1\r\n'
-            '\r\n'
-            ':: Copy new exe (copy works across drives, move may not)\r\n'
-            f'copy /Y /B "{downloaded_exe}" "{current_exe}" >NUL\r\n'
-            '\r\n'
-            ':: Verify copy\r\n'
-            f'if not exist "{current_exe}" (\r\n'
-            f'    move /Y "{old_exe}" "{current_exe}"\r\n'
-            '    exit /b 1\r\n'
-            ')\r\n'
-            '\r\n'
-            ':: Start new version\r\n'
-            f'start "" "{current_exe}"\r\n'
-            '\r\n'
-            ':: Cleanup\r\n'
-            'timeout /t 5 /nobreak >NUL\r\n'
-            f'if exist "{old_exe}" del /f /q "{old_exe}"\r\n'
-            f'if exist "{downloaded_exe}" del /f /q "{downloaded_exe}"\r\n'
-            f'rmdir /s /q "{update_dir}" 2>NUL\r\n'
-            '\r\n'
-            ':: Self-delete\r\n'
-            'del "%~f0"\r\n'
-        )
+        bat = f'''@echo off
+chcp 65001 >nul 2>&1
+setlocal enabledelayedexpansion
 
-        bat_path.write_text(bat, encoding="utf-8")
+:: -------------------------------------------------
+:: Wait for current process to exit
+:: -------------------------------------------------
+:wait
+tasklist /FI "PID eq {current_pid}" 2>NUL | find "{current_pid}" >NUL
+if %ERRORLEVEL%==0 (
+    timeout /t 1 /nobreak >NUL
+    goto wait
+)
 
+:: Extra delay to ensure DLL handles are released
+timeout /t 3 /nobreak >NUL
+
+:: -------------------------------------------------
+:: Cleanup previous leftovers
+:: -------------------------------------------------
+if exist "{old_exe}" del /f /q "{old_exe}"
+if exist "{new_exe}" del /f /q "{new_exe}"
+
+:: -------------------------------------------------
+:: Unblock downloaded file (critical)
+:: -------------------------------------------------
+powershell -Command "Unblock-File -Path '{downloaded_exe}'" >NUL 2>&1
+
+:: -------------------------------------------------
+:: Copy update to .new (NEVER overwrite live exe)
+:: -------------------------------------------------
+copy /Y /B "{downloaded_exe}" "{new_exe}" >NUL
+if not exist "{new_exe}" exit /b 1
+
+:: Small pause to ensure filesystem flush
+timeout /t 1 /nobreak >NUL
+
+:: -------------------------------------------------
+:: Replace executable atomically
+:: -------------------------------------------------
+move /Y "{current_exe}" "{old_exe}" >NUL
+move /Y "{new_exe}" "{current_exe}" >NUL
+
+:: -------------------------------------------------
+:: Final unblock (safety net)
+:: -------------------------------------------------
+powershell -Command "Unblock-File -Path '{current_exe}'" >NUL 2>&1
+
+:: -------------------------------------------------
+:: Start new version
+:: -------------------------------------------------
+start "" "{current_exe}"
+
+:: -------------------------------------------------
+:: Deferred cleanup (do NOT rush this)
+:: -------------------------------------------------
+timeout /t 5 /nobreak >NUL
+if exist "{old_exe}" del /f /q "{old_exe}"
+if exist "{downloaded_exe}" del /f /q "{downloaded_exe}"
+
+:: NOTE: update_dir intentionally NOT removed here
+:: new version may still rely on it during startup
+
+:: Self-delete
+(goto) 2>nul & del "%~f0"
+'''
+
+        update_dir.mkdir(parents=True, exist_ok=True)
+        bat_path.write_text(bat, encoding="cp437", errors="ignore")
+
+        # subprocess.Popen with DETACHED_PROCESS to allow self-delete
         subprocess.Popen(
             ["cmd", "/c", str(bat_path)],
-            creationflags=0x08000000,  # CREATE_NO_WINDOW
+            creationflags=0x00000008,  # DETACHED_PROCESS
             close_fds=True,
         )
+        sys.exit(0)
 
     # ------------------------------------------------------------------
     # Helpers

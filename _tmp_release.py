@@ -1,9 +1,9 @@
 """Create GitHub Release for V-Link v1.9.3 and upload EXE."""
 import json, os, sys, urllib.request, urllib.error, mimetypes
 
-TAG = "v1.9.5"
+TAG = "v1.9.4"
 REPO = "Volfheim/V-Link"
-EXE = r"E:\Gravity\V-Link\dist\V-Link-1.9.5.exe"
+EXE = r"E:\Gravity\V-Link\dist\V-Link-1.9.4.exe"
 TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
 if not TOKEN:
     import subprocess as _sp
@@ -22,17 +22,14 @@ if not TOKEN:
 
 BODY = r"""## What's Changed
 
-### 🚀 New Features
-- **Manual Update Check**: Added "Check for updates" button in Settings -> About. 
-  - (Crash fixed using robust dialog logic).
-  - (Startup check is also preserved).
-
-### ✨ Polishing
-- **Cleaner UI**: Removed "Powered by Volfheim" footer from Settings.
-- **Robust Updater**: Includes fix for "DLL Load Failed" during updates.
+### 🚀 Critical Fixes
+- **Atomic Update Strategy**: Implemented a robust update mechanism to prevent "DLL Load Failed" errors.
+  - New flow: Download -> Unblock -> Copy to `.new` -> Atomic Rename -> Launch.
+  - This ensures files are not locked or corrupted during update.
 
 ### Notes
-- This is the polished release with all features.
+- "Powered by Volfheim" footer is present.
+- Automatic update check on startup (no manual button).
 """
 
 headers = {
