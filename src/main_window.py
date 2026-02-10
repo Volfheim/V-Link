@@ -17,7 +17,6 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
-    QProgressDialog,
     QPushButton,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -298,75 +297,9 @@ class MainWindow(QMainWindow):
         old_autostart = self.settings.autostart
 
         dialog = SettingsDialog(self.settings, self)
-        # Use lambda to capture dialog instance
-        dialog.check_updates_clicked.connect(lambda: self._manual_update_check(dialog))
-        
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
 
-    def _manual_update_check(self, settings_dialog):
-        if not self.updater:
-            return
-
-        # Create a modal progress dialog parented to the settings dialog.
-        # WindowModal ensures it blocks input to settings but stays on top.
-        self._progress_dialog = QProgressDialog("Поиск обновлений...", "Отмена", 0, 0, settings_dialog)
-        self._progress_dialog.setWindowTitle("V-Link")
-        self._progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        self._progress_dialog.setAutoClose(False)
-        self._progress_dialog.setAutoReset(False)
-        self._progress_dialog.setMinimumDuration(0)
-        
-        # Connect cancel button
-        self._progress_dialog.canceled.connect(self._on_manual_check_canceled)
-        
-        self._progress_dialog.show()
-
-        # Run check in the main asyncio loop (we are in main thread, so ensure_future is safe)
-        if self.loop:
-            self._check_task = asyncio.ensure_future(self._run_manual_check(settings_dialog))
-
-    def _on_manual_check_canceled(self):
-        if hasattr(self, '_check_task') and self._check_task:
-            self._check_task.cancel()
-
-    async def _run_manual_check(self, settings_dialog):
-        try:
-            # Force check ignoring 12h timer
-            info = await self.updater.check_for_update(force=True)
-            
-            if self._progress_dialog:
-                self._progress_dialog.close()
-                self._progress_dialog = None
-
-            if info:
-                # Close settings dialog so user can see download progress in main window
-                if settings_dialog:
-                    settings_dialog.close()
-                # If update found, show the update dialog immediately
-                self._show_update_dialog()
-            else:
-                QMessageBox.information(
-                    settings_dialog, 
-                    "V-Link", 
-                    "У вас установлена последняя версия."
-                )
-
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            if self._progress_dialog:
-                self._progress_dialog.close()
-                self._progress_dialog = None
-            
-            QMessageBox.warning(
-                settings_dialog, 
-                "V-Link", 
-                f"Ошибка проверки:\n{e}"
-            )
-        finally:
-            self._check_task = None
-        
         self.device_list.default_port = self.settings.port
 
         if old_autostart != self.settings.autostart:

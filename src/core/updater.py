@@ -278,7 +278,7 @@ setlocal enabledelayedexpansion
 :: Wait for current process to exit
 :: -------------------------------------------------
 :wait
-tasklist /FI "PID eq {current_pid}" 2>NUL | find "{current_pid}" >NUL
+tasklist /FI "PID eq {current_pid}" >NUL 2>&1
 if %ERRORLEVEL%==0 (
     timeout /t 1 /nobreak >NUL
     goto wait
