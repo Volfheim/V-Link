@@ -1,9 +1,9 @@
 """Create GitHub Release for V-Link v1.9.1 and upload EXE."""
 import json, os, sys, urllib.request, urllib.error, mimetypes
 
-TAG = "v1.9.1"
+TAG = "v1.9.2"
 REPO = "Volfheim/V-Link"
-EXE = r"E:\Gravity\V-Link\dist\V-Link-1.9.1.exe"
+EXE = r"E:\Gravity\V-Link\dist\V-Link-1.9.2.exe"
 TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
 if not TOKEN:
     import subprocess as _sp
@@ -22,21 +22,20 @@ if not TOKEN:
 
 BODY = r"""## What's Changed
 
-### 🚀 Nonstandard networks — full speed everywhere
-- "Nonstandard networks" mode no longer sacrifices transfer speed for compatibility.
-- Always uses full-speed plan (4 MB chunks, auto-tune, parallel streams).
-- On transfer failure, automatically falls back to a conservative profile (512 KB, single stream).
-- Mode is now **off by default** — enable manually for campus/guest Wi-Fi or phone hotspots.
+### 🐛 Critical auto-update fix
+- Fixed auto-update failing when the EXE is on a different drive than `%LOCALAPPDATA%` (e.g. D:/E: vs C:).
+- Replaced `move` with `copy /B` + `del` in the update helper script — `move` silently corrupts PyInstaller EXEs across drives.
+- Windows Zone.Identifier (Alternate Data Stream) is now stripped from downloaded EXEs before launch, preventing Defender from blocking DLL extraction.
+- Added file verification: if the copy fails, the old EXE is restored automatically.
+- Extra delays added before/after EXE swap for reliable file handle release.
 
-### 🐛 Fixes
-- Removed the 10 GB file size limit — transfers of any size are now supported.
-- Fixed a bug where devices would sometimes show themselves in the device list. Improved self-detection with hostname-based filtering and periodic IP cache refresh.
+### ✨ Cosmetic
+- App version is now shown in the tray icon tooltip (e.g. "V-Link v1.9.2").
+- Update dialog now displays clean text instead of raw Markdown symbols.
 
 ### Implementation details
-- `client.py`: auto-fallback on retry — if first attempt fails with network error in compat mode, retries with conservative plan.
-- `discovery.py`: hostname-only self-check (no port match required); IP cache refreshed every probe cycle.
-- `server.py`: `client_max_size=0` (no upload limit).
-- `main_window.py`: always passes full-speed parameters regardless of compat mode.
+- `updater.py`: `os.remove(Zone.Identifier)` before bat launch; bat script uses `copy /Y /B` + `if not exist` guard.
+- `main_window.py`: `setToolTip(f"V-Link v{__version__}")` + regex-based markdown stripping in update dialog.
 """
 
 headers = {

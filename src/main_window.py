@@ -56,6 +56,7 @@ class MainWindow(QMainWindow):
         self._services_ready = False
         self._services_starting = False
         self._quitting = False
+        self._transfer_directions: Dict[str, tuple] = {}
 
         self._network_timer = QTimer(self)
         self._network_timer.setInterval(15000)
@@ -217,6 +218,10 @@ class MainWindow(QMainWindow):
         hotspot_action.triggered.connect(self._open_hotspot_settings)
         tray_menu.addAction(hotspot_action)
 
+        downloads_action = QAction("Открыть папку загрузок", self)
+        downloads_action.triggered.connect(self._open_downloads_folder)
+        tray_menu.addAction(downloads_action)
+
         tray_menu.addSeparator()
 
         quit_action = QAction("Выход", self)
@@ -252,6 +257,14 @@ class MainWindow(QMainWindow):
                 "V-Link",
                 "Откройте вручную:\nПараметры Windows -> Сеть и Интернет -> Мобильный хот-спот",
             )
+
+    def _open_downloads_folder(self):
+        folder = self.settings.download_dir
+        try:
+            os.makedirs(folder, exist_ok=True)
+            os.startfile(folder)
+        except Exception:
+            QMessageBox.warning(self, "V-Link", f"Не удалось открыть папку:\n{folder}")
 
     def _refresh_devices(self):
         if self.discovery and self.loop:
@@ -819,11 +832,13 @@ class MainWindow(QMainWindow):
         item = self.transfer_list.add_transfer(transfer_id, filename, total_size, False)
         if self._low_power_mode:
             item.set_low_power_mode(True)
+        self._transfer_directions[transfer_id] = ("in", total_size)
 
     def _on_outgoing_transfer_start(self, transfer_id: str, filename: str, total_size: int, is_upload: bool):
         item = self.transfer_list.add_transfer(transfer_id, filename, total_size, True)
         if self._low_power_mode:
             item.set_low_power_mode(True)
+        self._transfer_directions[transfer_id] = ("out", total_size)
 
     def _on_relay_transfer_start(self, transfer_id: str, filename: str, total_size: int, is_upload: bool):
         if is_upload:
@@ -834,12 +849,28 @@ class MainWindow(QMainWindow):
     def _on_transfer_progress(self, transfer_id: str, transferred: int, speed: float):
         self.transfer_list.update_transfer(transfer_id, transferred, speed)
 
+    @staticmethod
+    def _human_size(size_bytes: int) -> str:
+        for unit in ("Б", "КБ", "МБ", "ГБ"):
+            if abs(size_bytes) < 1024:
+                return f"{size_bytes:.1f} {unit}" if unit != "Б" else f"{size_bytes} {unit}"
+            size_bytes /= 1024
+        return f"{size_bytes:.1f} ТБ"
+
     def _on_transfer_complete(self, transfer_id: str, filepath: str):
         self.transfer_list.complete_transfer(transfer_id, filepath)
         if self.tray_icon.isVisible():
+            direction, size = self._transfer_directions.pop(transfer_id, ("in", 0))
+            name = os.path.basename(filepath)
+            if direction == "in":
+                msg = f"📥 Получен: {name}"
+            else:
+                msg = f"📤 Отправлен: {name}"
+            if size > 0:
+                msg += f" ({self._human_size(size)})"
             self.tray_icon.showMessage(
                 "V-Link",
-                f"Файл обработан: {os.path.basename(filepath)}",
+                msg,
                 QSystemTrayIcon.MessageIcon.Information,
                 3000,
             )
