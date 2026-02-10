@@ -370,7 +370,7 @@ class MainWindow(QMainWindow):
             self.settings.port,
             self.settings.download_dir,
             auth_token=auth_secret,
-            chunk_size_bytes=512 * 1024 if compatibility_mode else 4 * 1024 * 1024,
+            chunk_size_bytes=4 * 1024 * 1024,
             verify_checksum=verify_checksum,
             enable_encryption=secure_mode,
         )
@@ -389,9 +389,9 @@ class MainWindow(QMainWindow):
 
         self.client = TransferClient(
             auth_token=auth_secret,
-            base_chunk_size_bytes=512 * 1024 if compatibility_mode else 4 * 1024 * 1024,
+            base_chunk_size_bytes=4 * 1024 * 1024,
             verify_checksum=verify_checksum,
-            auto_tune=not compatibility_mode,
+            auto_tune=True,
             adaptive_profile=self.settings.adaptive_profile,
             enable_encryption=secure_mode,
             compatibility_mode=compatibility_mode,

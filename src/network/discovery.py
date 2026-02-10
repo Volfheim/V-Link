@@ -174,9 +174,10 @@ class DeviceDiscovery:
 
     def _is_self_candidate(self, name: str, port: int, ips: List[str], sender_ip: str = "") -> bool:
         local_set = set(self.get_local_ips())
-        if sender_ip and sender_ip in local_set and port == self.port:
+        # Hostname alone is a strong self-indicator (port may differ due to fallback).
+        if name == self.get_hostname():
             return True
-        if name == self.get_hostname() and port == self.port:
+        if sender_ip and sender_ip in local_set and port == self.port:
             return True
         if any(ip in local_set for ip in ips) and port == self.port:
             return True
@@ -512,6 +513,11 @@ class DeviceDiscovery:
     async def _compat_probe_loop(self):
         while self._running and self.compatibility_mode:
             try:
+                # Refresh local IPs each cycle so late-acquired addresses
+                # (e.g. phone hotspot) are recognised as self.
+                self._local_ips = self._list_local_ipv4()
+                self._local_ip = self._local_ips[0] if self._local_ips else "127.0.0.1"
+
                 candidates = self._collect_probe_candidates()
                 ports = self._port_candidates()
                 if candidates and ports:

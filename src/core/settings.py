@@ -14,7 +14,7 @@ DEFAULT_SETTINGS = {
     'port': 8765,
     'download_dir': str(Path.home() / "Downloads" / "V-Link"),
     'secure_mode': False,
-    'nonstandard_network_mode': True,
+    'nonstandard_network_mode': False,
     'relay_mode': False,
     'relay_server_url': '',
     'relay_channel': 'default',

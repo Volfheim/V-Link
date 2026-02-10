@@ -46,7 +46,7 @@ class TransferServer:
             key = hashlib.sha256(self.auth_token.encode("utf-8")).digest()
             import base64
             self._cipher = Fernet(base64.urlsafe_b64encode(key))
-        self.app = web.Application(client_max_size=1024**3 * 10)  # 10 GB max
+        self.app = web.Application(client_max_size=0)  # No upload size limit
         self.runner: Optional[web.AppRunner] = None
         self.site: Optional[web.TCPSite] = None
         self._running = False

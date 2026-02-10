@@ -165,6 +165,10 @@ class TransferClient:
                 if attempt < MAX_RETRIES - 1:
                     await self.stop()
                     await self._ensure_session()
+                    # Auto-fallback: switch to conservative plan for retries
+                    # on nonstandard networks where full-speed failed.
+                    if self.compatibility_mode and use_plan.chunk_size > 512 * 1024:
+                        use_plan = TransferPlan(chunk_size=512 * 1024, parallel_uploads=1, use_lz4=False)
                     await asyncio.sleep(RETRY_DELAY * (attempt + 1))
             except Exception as e:
                 last_error = e
@@ -291,10 +295,6 @@ class TransferClient:
         await asyncio.gather(*(send_one(filepath) for filepath in filepaths))
 
     async def _build_plan(self, filepaths: List[str]) -> TransferPlan:
-        if self.compatibility_mode:
-            # More conservative transport profile for restrictive Wi-Fi (guest/campus/hotspot).
-            return TransferPlan(chunk_size=512 * 1024, parallel_uploads=1, use_lz4=False)
-
         if not self.auto_tune:
             return TransferPlan(self.base_chunk_size_bytes, 1, False)
 
