@@ -1,9 +1,9 @@
-"""Create GitHub Release for V-Link v1.9.1 and upload EXE."""
+"""Create GitHub Release for V-Link v1.9.3 and upload EXE."""
 import json, os, sys, urllib.request, urllib.error, mimetypes
 
-TAG = "v1.9.2"
+TAG = "v1.9.4"
 REPO = "Volfheim/V-Link"
-EXE = r"E:\Gravity\V-Link\dist\V-Link-1.9.2.exe"
+EXE = r"E:\Gravity\V-Link\dist\V-Link-1.9.4.exe"
 TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
 if not TOKEN:
     import subprocess as _sp
@@ -22,20 +22,16 @@ if not TOKEN:
 
 BODY = r"""## What's Changed
 
-### 🐛 Critical auto-update fix
-- Fixed auto-update failing when the EXE is on a different drive than `%LOCALAPPDATA%` (e.g. D:/E: vs C:).
-- Replaced `move` with `copy /B` + `del` in the update helper script — `move` silently corrupts PyInstaller EXEs across drives.
-- Windows Zone.Identifier (Alternate Data Stream) is now stripped from downloaded EXEs before launch, preventing Defender from blocking DLL extraction.
-- Added file verification: if the copy fails, the old EXE is restored automatically.
-- Extra delays added before/after EXE swap for reliable file handle release.
+### 🚀 New Features
+- **Manual Update Check**: Added a "Check for updates" button in Settings -> About.
+  - This forces a check against GitHub, ignoring the standard 12-hour timer.
+  - Useful if you want to update immediately after a release.
 
-### ✨ Cosmetic
-- App version is now shown in the tray icon tooltip (e.g. "V-Link v1.9.2").
-- Update dialog now displays clean text instead of raw Markdown symbols.
+### 🐛 Improvements
+- Added an "About" section in Settings displaying the current version.
 
-### Implementation details
-- `updater.py`: `os.remove(Zone.Identifier)` before bat launch; bat script uses `copy /Y /B` + `if not exist` guard.
-- `main_window.py`: `setToolTip(f"V-Link v{__version__}")` + regex-based markdown stripping in update dialog.
+### Notes
+- If you are on v1.9.2/v1.9.3 and don't see the update notification yet, you can either wait (up to 12h) or install v1.9.4 manually to get the "Check for updates" button for future releases.
 """
 
 headers = {

@@ -478,9 +478,11 @@ class MainWindow(QMainWindow):
         self._services_ready = True
         self._services_starting = False
 
-        # Auto-update check (non-blocking, respects 12h cache)
+        # Auto-update check (non-blocking, respects 12h cache unless forced on startup?)
+        # User requested: "check updates at program launch, cache 12h only for tray restore"
+        # So we force check here.
         self._init_updater()
-        asyncio.ensure_future(self._check_for_update())
+        asyncio.ensure_future(self._check_for_update(force=True))
 
     async def stop_services(self):
         self._services_ready = False
@@ -989,13 +991,13 @@ class MainWindow(QMainWindow):
         self.update_btn.setToolTip(f"Доступно обновление V-Link {version}")
         self.update_btn.setVisible(True)
 
-    async def _check_for_update(self):
+    async def _check_for_update(self, force: bool = False):
         if self._low_power_mode:
             return
         if not self.updater:
             return
         try:
-            await self.updater.check_for_update()
+            await self.updater.check_for_update(force=force)
         except Exception:
             pass
 

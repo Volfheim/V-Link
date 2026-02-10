@@ -1,8 +1,4 @@
-﻿"""
-V-Link - Settings Dialog
-"""
-
-from PyQt6.QtCore import Qt
+﻿from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -221,6 +217,8 @@ class SettingsDialog(QDialog):
 
         content_layout.addWidget(behavior_group)
         content_layout.addWidget(network_group)
+
+        # Reverted: About group removed
         content_layout.addStretch()
 
         scroll.setWidget(content)
