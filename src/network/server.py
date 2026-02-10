@@ -7,6 +7,7 @@ import os
 import time
 import hashlib
 import socket
+import errno
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -214,18 +215,48 @@ class TransferServer:
         self.runner = web.AppRunner(self.app)
         await self.runner.setup()
 
-        for port_offset in range(PORT_RANGE):
-            try_port = self.requested_port + port_offset
+        async def start_on_port(try_port: int) -> bool:
             try:
                 self.site = web.TCPSite(self.runner, '0.0.0.0', try_port)
                 await self.site.start()
-                self.port = try_port
+                bound_port = try_port
+                if try_port == 0:
+                    server_obj = getattr(self.site, "_server", None)
+                    sockets = getattr(server_obj, "sockets", None) or []
+                    if sockets:
+                        bound_port = int(sockets[0].getsockname()[1])
+                self.port = int(bound_port)
                 self._running = True
-                return self.port
+                return True
             except OSError as e:
-                if 'address already in use' in str(e).lower() or e.errno == 10048:
-                    continue
+                is_addr_in_use = (
+                    'address already in use' in str(e).lower()
+                    or e.errno in (10048, errno.EADDRINUSE)
+                )
+                if is_addr_in_use:
+                    self.site = None
+                    return False
                 raise
+
+        try:
+            for port_offset in range(PORT_RANGE):
+                try_port = self.requested_port + port_offset
+                if await start_on_port(try_port):
+                    return self.port
+
+            # Last resort: ask OS for any free port instead of failing startup.
+            if await start_on_port(0):
+                return self.port
+        except Exception:
+            try:
+                if self.runner:
+                    await self.runner.cleanup()
+            except Exception:
+                pass
+            self.runner = None
+            self.site = None
+            self._running = False
+            raise
 
         error_msg = (
             f'Failed to start server: all ports '
@@ -233,6 +264,14 @@ class TransferServer:
         )
         if self.on_server_error:
             self.on_server_error(error_msg)
+        try:
+            if self.runner:
+                await self.runner.cleanup()
+        except Exception:
+            pass
+        self.runner = None
+        self.site = None
+        self._running = False
         raise OSError(error_msg)
 
     async def stop(self):
