@@ -1,4 +1,8 @@
-﻿from PyQt6.QtCore import Qt
+﻿"""
+V-Link - Settings Dialog
+"""
+
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -16,10 +20,13 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.custom_widgets import CheckBoxWithMark
+from version import __version__
 
 
 class SettingsDialog(QDialog):
     """Application settings dialog."""
+
+    check_updates_clicked = pyqtSignal()
 
     def __init__(self, settings, parent=None):
         super().__init__(parent)
@@ -218,16 +225,40 @@ class SettingsDialog(QDialog):
         content_layout.addWidget(behavior_group)
         content_layout.addWidget(network_group)
 
-        # About group removed for v1.9.4 (robust update logic only)
+        about_group = QGroupBox("О программе")
+        about_layout = QVBoxLayout(about_group)
+        about_layout.setSpacing(12)
+
+        version_label = QLabel(f"V-Link v{__version__}")
+        version_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #f8fafc;")
+        about_layout.addWidget(version_label)
+
+        author_label = QLabel("Создано Volfheim © 2026")
+        author_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        about_layout.addWidget(author_label)
+
+        check_updates_btn = QPushButton("Проверить обновления")
+        check_updates_btn.setToolTip("Принудительно проверить наличие новой версии на GitHub")
+        check_updates_btn.clicked.connect(self.check_updates_clicked.emit)
+        check_updates_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #334155;
+                border: 1px solid #475569;
+                color: #e2e8f0;
+            }
+            QPushButton:hover {
+                background-color: #475569;
+                border: 1px solid #64748b;
+            }
+        """)
+        about_layout.addWidget(check_updates_btn)
+
+        content_layout.addWidget(about_group)
+
         content_layout.addStretch()
 
         scroll.setWidget(content)
         root_layout.addWidget(scroll)
-
-        footer = QLabel("Powered by Volfheim")
-        footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        footer.setStyleSheet("color: #64748b; font-size: 11px;")
-        root_layout.addWidget(footer)
 
         buttons = QHBoxLayout()
         buttons.addStretch()
