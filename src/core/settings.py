@@ -25,6 +25,9 @@ DEFAULT_SETTINGS = {
     'close_to_tray': True,
     'show_notifications': True,
     'theme': 'dark',
+    'auto_check_updates': True,
+    'last_update_check': '',
+    'skipped_version': '',
 }
 
 

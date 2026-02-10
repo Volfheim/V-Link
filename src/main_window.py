@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core import Settings, set_autostart
+from core import Settings, Updater, set_autostart
 from network import DeviceDiscovery, RelayClient, TransferClient, TransferServer
 from ui import DeviceList, DropZone, TransferList, get_stylesheet
 from ui.settings_dialog import SettingsDialog
@@ -44,6 +44,7 @@ class MainWindow(QMainWindow):
         self.server: Optional[TransferServer] = None
         self.client: Optional[TransferClient] = None
         self.relay: Optional[RelayClient] = None
+        self.updater: Optional[Updater] = None
         self.relay_peers: Dict[str, Dict] = {}
         self.selected_device: Optional[tuple] = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
@@ -105,6 +106,26 @@ class MainWindow(QMainWindow):
 
         header.addLayout(title_layout)
         header.addStretch()
+
+        self.update_btn = QPushButton("⬆ Обновить")
+        self.update_btn.setToolTip("Доступно обновление V-Link")
+        self.update_btn.setStyleSheet(
+            """
+            QPushButton {
+                background: rgba(34, 197, 94, 0.15);
+                border: 1px solid #22c55e;
+                color: #22c55e;
+                border-radius: 6px;
+                padding: 8px 14px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background: rgba(34, 197, 94, 0.3); }
+            """
+        )
+        self.update_btn.clicked.connect(self._show_update_dialog)
+        self.update_btn.setVisible(False)
+        header.addWidget(self.update_btn)
 
         self.refresh_btn = QPushButton()
         self.refresh_btn.setToolTip("Обновить список устройств")
@@ -442,6 +463,10 @@ class MainWindow(QMainWindow):
 
         self._services_ready = True
         self._services_starting = False
+
+        # Auto-update check (non-blocking, respects 12h cache)
+        self._init_updater()
+        asyncio.ensure_future(self._check_for_update())
 
     async def stop_services(self):
         self._services_ready = False
@@ -903,10 +928,138 @@ class MainWindow(QMainWindow):
         self.raise_()
         if self.loop:
             asyncio.run_coroutine_threadsafe(self.exit_low_power_mode(), self.loop)
+            asyncio.run_coroutine_threadsafe(self._check_for_update(), self.loop)
 
     @pyqtSlot()
     def _finalize_quit(self):
         QApplication.quit()
+
+    # ------------------------------------------------------------------
+    # Auto-update
+    # ------------------------------------------------------------------
+
+    def _init_updater(self):
+        if self.updater:
+            return
+        self.updater = Updater(self.settings)
+        self.updater.on_update_available = self._on_update_available
+
+    def _on_update_available(self, version: str, body: str):
+        QMetaObject.invokeMethod(
+            self, "_show_update_button",
+            Qt.ConnectionType.QueuedConnection,
+            Q_ARG(str, version),
+        )
+
+    @pyqtSlot(str)
+    def _show_update_button(self, version: str):
+        self.update_btn.setText(f"⬆ {version}")
+        self.update_btn.setToolTip(f"Доступно обновление V-Link {version}")
+        self.update_btn.setVisible(True)
+
+    async def _check_for_update(self):
+        if self._low_power_mode:
+            return
+        if not self.updater:
+            return
+        try:
+            await self.updater.check_for_update()
+        except Exception:
+            pass
+
+    @pyqtSlot()
+    def _show_update_dialog(self):
+        if not self.updater or not self.updater.has_update:
+            return
+
+        version = self.updater.update_version
+        body = self.updater.update_body or "Нет описания."
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("V-Link — Обновление")
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setText(f"Доступна новая версия: <b>{version}</b>")
+        msg.setInformativeText(body[:800])
+        btn_update = msg.addButton("Обновить", QMessageBox.ButtonRole.AcceptRole)
+        btn_skip = msg.addButton("Пропустить", QMessageBox.ButtonRole.RejectRole)
+        msg.setDefaultButton(btn_update)
+        msg.exec()
+
+        if msg.clickedButton() == btn_update:
+            if self.loop:
+                asyncio.run_coroutine_threadsafe(self._do_update(), self.loop)
+        elif msg.clickedButton() == btn_skip:
+            self.updater.skip_version()
+            self.update_btn.setVisible(False)
+
+    async def _do_update(self):
+        if not self.updater:
+            return
+
+        QMetaObject.invokeMethod(self, "_update_status_downloading",
+                                 Qt.ConnectionType.QueuedConnection)
+
+        self.updater.on_download_progress = self._on_update_download_progress
+
+        downloaded = await self.updater.download_update()
+
+        if not downloaded:
+            QMetaObject.invokeMethod(self, "_update_status_error",
+                                     Qt.ConnectionType.QueuedConnection)
+            return
+
+        QMetaObject.invokeMethod(self, "_apply_update",
+                                 Qt.ConnectionType.QueuedConnection,
+                                 Q_ARG(str, str(downloaded)))
+
+    def _on_update_download_progress(self, percent: int):
+        QMetaObject.invokeMethod(
+            self, "_update_download_progress_ui",
+            Qt.ConnectionType.QueuedConnection,
+            Q_ARG(int, percent),
+        )
+
+    @pyqtSlot(int)
+    def _update_download_progress_ui(self, percent: int):
+        self.status_label.setText(f"● Скачивание обновления: {percent}%")
+        self.status_label.setStyleSheet("color: #6b5ce7; font-size: 12px;")
+
+    @pyqtSlot()
+    def _update_status_downloading(self):
+        self.status_label.setText("● Скачивание обновления...")
+        self.status_label.setStyleSheet("color: #6b5ce7; font-size: 12px;")
+        self.update_btn.setEnabled(False)
+
+    @pyqtSlot()
+    def _update_status_error(self):
+        self.status_label.setText("● Ошибка загрузки обновления")
+        self.status_label.setStyleSheet("color: #ef4444; font-size: 12px;")
+        self.update_btn.setEnabled(True)
+
+    @pyqtSlot(str)
+    def _apply_update(self, downloaded_path: str):
+        from pathlib import Path
+
+        reply = QMessageBox.question(
+            self,
+            "V-Link",
+            "Обновление скачано. Перезапустить приложение?\n\n"
+            "V-Link закроется, обновится и запустится заново.\n"
+            "Настройки будут сохранены.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            self.status_label.setText("● Обновление отложено")
+            self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
+            self.update_btn.setEnabled(True)
+            return
+
+        self.status_label.setText("● Применение обновления...")
+        self.status_label.setStyleSheet("color: #6b5ce7; font-size: 12px;")
+
+        self.updater.apply_update(Path(downloaded_path))
+        self._quit_app()
 
     def _quit_app(self):
         if self._quitting:
