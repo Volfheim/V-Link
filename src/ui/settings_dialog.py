@@ -218,7 +218,7 @@ class SettingsDialog(QDialog):
         content_layout.addWidget(behavior_group)
         content_layout.addWidget(network_group)
 
-        # Reverted: About group removed
+        # About group removed for v1.9.4 (robust update logic only)
         content_layout.addStretch()
 
         scroll.setWidget(content)

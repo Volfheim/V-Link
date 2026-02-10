@@ -22,16 +22,16 @@ if not TOKEN:
 
 BODY = r"""## What's Changed
 
-### 🚀 New Features
-- **Manual Update Check**: Added a "Check for updates" button in Settings -> About.
-  - This forces a check against GitHub, ignoring the standard 12-hour timer.
-  - Useful if you want to update immediately after a release.
+### 🚀 Improvements
+- **Robust Update Mechanism**: Fixed "DLL Load Failed" error during updates by adding Windows MotW unblocking and strict file verification.
+- **Check on Startup**: V-Link now checks for updates **automatically at every launch**.
 
-### 🐛 Improvements
-- Added an "About" section in Settings displaying the current version.
+### 🐛 Fixes
+- Reverted manual update check button due to stability issues (will be re-added in future versions).
+- Enhanced reliability of the self-update process using Powershell.
 
 ### Notes
-- If you are on v1.9.2/v1.9.3 and don't see the update notification yet, you can either wait (up to 12h) or install v1.9.4 manually to get the "Check for updates" button for future releases.
+- This version focuses on fixing the update loop issue.
 """
 
 headers = {

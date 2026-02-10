@@ -200,8 +200,25 @@ class Updater:
                             if total > 0 and self.on_download_progress:
                                 self.on_download_progress(min(100, int(received * 100 / total)))
 
-            if not target.exists() or target.stat().st_size < 1_000_000:
-                raise RuntimeError("Downloaded file is too small or missing")
+            # Strict size check
+            if not target.exists():
+                raise RuntimeError("File not found after download")
+            
+            actual_size = target.stat().st_size
+            if self._info.asset_size and actual_size != self._info.asset_size:
+                raise RuntimeError(f"Size check failed: expected {self._info.asset_size}, got {actual_size}")
+            
+            if actual_size < 1_000_000:
+                raise RuntimeError("Downloaded file is too small (<1MB)")
+
+            # Unblock file using Powershell (critical for Windows 10/11)
+            try:
+                subprocess.run(
+                    ["powershell", "-Command", f"Unblock-File -Path '{str(target)}'"],
+                    check=False, creationflags=0x08000000
+                )
+            except Exception:
+                pass
 
             if self.on_update_ready:
                 self.on_update_ready(str(target))
@@ -263,7 +280,7 @@ class Updater:
             ')\r\n'
             '\r\n'
             ':: Extra delay for file handles to be released\r\n'
-            'timeout /t 2 /nobreak >NUL\r\n'
+            'timeout /t 3 /nobreak >NUL\r\n'
             '\r\n'
             ':: Remove previous .old if exists\r\n'
             f'if exist "{old_exe}" del /f /q "{old_exe}"\r\n'
@@ -271,23 +288,16 @@ class Updater:
             ':: Rename running exe to .old\r\n'
             f'move /Y "{current_exe}" "{old_exe}"\r\n'
             '\r\n'
+            ':: Unblock the new file again (just in case)\r\n'
+            f'powershell -Command "Unblock-File -Path \'{downloaded_exe}\'" >NUL 2>&1\r\n'
+            '\r\n'
             ':: Copy new exe (copy works across drives, move may not)\r\n'
             f'copy /Y /B "{downloaded_exe}" "{current_exe}" >NUL\r\n'
             '\r\n'
-            ':: Verify the new exe exists before launching\r\n'
+            ':: Verify copy\r\n'
             f'if not exist "{current_exe}" (\r\n'
             f'    move /Y "{old_exe}" "{current_exe}"\r\n'
             '    exit /b 1\r\n'
-            ')\r\n'
-            '\r\n'
-            ':: Remove Zone.Identifier from new exe\r\n'
-            f'echo.>"{current_exe}:Zone.Identifier" 2>NUL\r\n'
-            f'del /f "{current_exe}:Zone.Identifier" 2>NUL\r\n'
-            '\r\n'
-            ':: Update autostart registry if enabled\r\n'
-            f'if "{autostart_flag}"=="1" (\r\n'
-            f'    reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" '
-            f'/v "V-Link" /t REG_SZ /d "\\"{current_exe}\\"" /f >NUL 2>&1\r\n'
             ')\r\n'
             '\r\n'
             ':: Start new version\r\n'
