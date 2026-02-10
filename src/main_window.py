@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core import Settings, Updater, set_autostart
+from version import __version__
 from network import DeviceDiscovery, RelayClient, TransferClient, TransferServer
 from ui import DeviceList, DropZone, TransferList, get_stylesheet
 from ui.settings_dialog import SettingsDialog
@@ -204,7 +205,7 @@ class MainWindow(QMainWindow):
             self.tray_icon.setIcon(QIcon(icon_path))
         else:
             self.tray_icon.setIcon(QIcon("app_icon.ico"))
-        self.tray_icon.setToolTip("V-Link")
+        self.tray_icon.setToolTip(f"V-Link v{__version__}")
 
         tray_menu = QMenu()
 
@@ -979,7 +980,15 @@ class MainWindow(QMainWindow):
         msg.setWindowTitle("V-Link — Обновление")
         msg.setIcon(QMessageBox.Icon.Information)
         msg.setText(f"Доступна новая версия: <b>{version}</b>")
-        msg.setInformativeText(body[:800])
+        # Strip markdown formatting for plain-text QMessageBox display
+        import re
+        clean_body = body
+        clean_body = re.sub(r'^#{1,6}\s*', '', clean_body, flags=re.MULTILINE)  # ## headers
+        clean_body = re.sub(r'\*\*(.+?)\*\*', r'\1', clean_body)  # **bold**
+        clean_body = re.sub(r'\*(.+?)\*', r'\1', clean_body)  # *italic*
+        clean_body = re.sub(r'^\s*[-\*]\s+', '• ', clean_body, flags=re.MULTILINE)  # - list items
+        clean_body = clean_body.strip()
+        msg.setInformativeText(clean_body[:800])
         btn_update = msg.addButton("Обновить", QMessageBox.ButtonRole.AcceptRole)
         btn_skip = msg.addButton("Пропустить", QMessageBox.ButtonRole.RejectRole)
         msg.setDefaultButton(btn_update)

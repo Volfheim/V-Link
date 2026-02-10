@@ -235,9 +235,21 @@ class Updater:
         bat_path = update_dir / "_v-link-update.bat"
         old_exe = current_exe.parent / (current_exe.stem + ".old")
 
+        # Strip Windows Zone.Identifier to prevent Defender from blocking
+        # the extracted DLLs when the new EXE launches.
+        try:
+            ads_path = str(downloaded_exe) + ":Zone.Identifier"
+            if os.path.exists(ads_path):
+                os.remove(ads_path)
+        except Exception:
+            pass
+
         # If autostart is on, we need to refresh the registry entry
         autostart_flag = "1" if self.settings.get("autostart", False) else "0"
 
+        # Use copy+del instead of move to avoid cross-drive issues.
+        # move /Y silently fails or corrupts PyInstaller EXEs when
+        # source (%LOCALAPPDATA%) and destination are on different drives.
         bat = (
             '@echo off\r\n'
             'chcp 65001 >nul 2>&1\r\n'
@@ -250,14 +262,27 @@ class Updater:
             '    goto wait\r\n'
             ')\r\n'
             '\r\n'
+            ':: Extra delay for file handles to be released\r\n'
+            'timeout /t 2 /nobreak >NUL\r\n'
+            '\r\n'
             ':: Remove previous .old if exists\r\n'
             f'if exist "{old_exe}" del /f /q "{old_exe}"\r\n'
             '\r\n'
-            ':: Rename running exe\r\n'
+            ':: Rename running exe to .old\r\n'
             f'move /Y "{current_exe}" "{old_exe}"\r\n'
             '\r\n'
-            ':: Place new exe\r\n'
-            f'move /Y "{downloaded_exe}" "{current_exe}"\r\n'
+            ':: Copy new exe (copy works across drives, move may not)\r\n'
+            f'copy /Y /B "{downloaded_exe}" "{current_exe}" >NUL\r\n'
+            '\r\n'
+            ':: Verify the new exe exists before launching\r\n'
+            f'if not exist "{current_exe}" (\r\n'
+            f'    move /Y "{old_exe}" "{current_exe}"\r\n'
+            '    exit /b 1\r\n'
+            ')\r\n'
+            '\r\n'
+            ':: Remove Zone.Identifier from new exe\r\n'
+            f'echo.>"{current_exe}:Zone.Identifier" 2>NUL\r\n'
+            f'del /f "{current_exe}:Zone.Identifier" 2>NUL\r\n'
             '\r\n'
             ':: Update autostart registry if enabled\r\n'
             f'if "{autostart_flag}"=="1" (\r\n'
@@ -269,8 +294,9 @@ class Updater:
             f'start "" "{current_exe}"\r\n'
             '\r\n'
             ':: Cleanup\r\n'
-            'timeout /t 3 /nobreak >NUL\r\n'
+            'timeout /t 5 /nobreak >NUL\r\n'
             f'if exist "{old_exe}" del /f /q "{old_exe}"\r\n'
+            f'if exist "{downloaded_exe}" del /f /q "{downloaded_exe}"\r\n'
             f'rmdir /s /q "{update_dir}" 2>NUL\r\n'
             '\r\n'
             ':: Self-delete\r\n'
