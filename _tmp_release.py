@@ -1,9 +1,9 @@
 """Create GitHub Release for V-Link v1.9.3 and upload EXE."""
 import json, os, sys, urllib.request, urllib.error, mimetypes
 
-TAG = "v1.9.4"
+TAG = "v1.9.5"
 REPO = "Volfheim/V-Link"
-EXE = r"E:\Gravity\V-Link\dist\V-Link-1.9.4.exe"
+EXE = r"E:\Gravity\V-Link\dist\V-Link-1.9.5.exe"
 TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
 if not TOKEN:
     import subprocess as _sp
@@ -22,16 +22,20 @@ if not TOKEN:
 
 BODY = r"""## What's Changed
 
-### 🚀 Critical Fixes
+### 🚀 Critical Fixes & Features
 - **Updater Hanging Fix**: Resolved issue where updater would hang on `find` command on localized Windows versions.
   - Replaced `tasklist | find` with robust `tasklist /FI` exit code check.
   - This prevents the empty CMD window from freezing during update.
 
 - **Atomic Update Strategy**: (Previously added) Safe update flow preventing DLL lock errors.
+- **Manual Update Check**: Added "Check for updates" button in Settings -> About (no crashes).
+
+### ✨ Polishing
+- **Cleaner UI**: Removed "Powered by Volfheim" footer from Settings.
+- **Robustness**: Enhanced file handling during updates for Windows 10/11.
 
 ### Notes
-- "Powered by Volfheim" footer is present.
-- Automatic update check on startup (no manual button).
+- This is the recommended version (Clean UI + Manual Update).
 """
 
 headers = {
