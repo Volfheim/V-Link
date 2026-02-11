@@ -23,6 +23,14 @@ def build():
         print("Installing PyInstaller...")
         subprocess.run([sys.executable, "-m", "pip", "install", "pyinstaller"], check=True)
 
+    # Ensure QR dependencies are present for mobile connect dialog.
+    try:
+        import qrcode  # noqa: F401
+        from PIL import Image  # noqa: F401
+    except ImportError:
+        print("Installing QR dependencies (qrcode[pil])...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "qrcode[pil]"], check=True)
+
     # Keep runtime executable path stable for in-place updates and shortcuts.
     output_name = "V-Link"
 
@@ -44,6 +52,16 @@ def build():
         "src",
         "--add-data",
         "app_icon.ico;.",
+        "--add-data",
+        "src/ui/web_interface.html;ui",
+        "--hidden-import",
+        "qrcode",
+        "--hidden-import",
+        "qrcode.image.pil",
+        "--hidden-import",
+        "PIL.Image",
+        "--exclude-module",
+        "numpy",
         "src/main.py",
     ]
 

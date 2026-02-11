@@ -4,8 +4,11 @@ Async server for receiving files over local network.
 """
 
 import os
+import sys
 import time
 import hashlib
+import secrets
+import string
 import socket
 import errno
 from pathlib import Path
@@ -20,6 +23,8 @@ from cryptography.fernet import Fernet
 CHUNK_SIZE = 1024 * 1024  # 1 MB
 DEFAULT_PORT = 8765
 PORT_RANGE = 10
+MOBILE_TOKEN_ALPHABET = string.ascii_uppercase + string.digits
+MOBILE_TOKEN_LEN = 6
 
 
 class TransferServer:
@@ -50,19 +55,259 @@ class TransferServer:
         self.runner: Optional[web.AppRunner] = None
         self.site: Optional[web.TCPSite] = None
         self._running = False
+        self.mobile_share_enabled = False
+        self.mobile_token = ""
+        self.mobile_token_expire_at = 0.0
+        self._mobile_template_cache: Optional[str] = None
 
         self.on_transfer_start: Optional[Callable] = None
         self.on_transfer_progress: Optional[Callable] = None
         self.on_transfer_complete: Optional[Callable] = None
         self.on_transfer_error: Optional[Callable] = None
         self.on_server_error: Optional[Callable] = None
+        self.on_clipboard_update: Optional[Callable] = None
 
         self._setup_routes()
 
     def _setup_routes(self):
+        self.app.router.add_get('/', self._handle_mobile_index)
         self.app.router.add_post('/upload', self._handle_upload)
+        self.app.router.add_post('/clipboard', self._handle_clipboard)
         self.app.router.add_get('/ping', self._handle_ping)
         self.app.router.add_get('/info', self._handle_info)
+        self.app.router.add_get('/api/mobile/files', self._handle_mobile_files)
+        self.app.router.add_post('/api/mobile/upload', self._handle_mobile_upload)
+        self.app.router.add_get('/api/mobile/download/{filename}', self._handle_mobile_download)
+
+    def enable_mobile_share(self, ttl_sec: int = 0) -> str:
+        """Enable mobile web share and return session token."""
+        self.mobile_share_enabled = True
+        self.mobile_token = "".join(secrets.choice(MOBILE_TOKEN_ALPHABET) for _ in range(MOBILE_TOKEN_LEN))
+        self.mobile_token_expire_at = (time.time() + int(ttl_sec)) if ttl_sec > 0 else 0.0
+        return self.mobile_token
+
+    def disable_mobile_share(self):
+        self.mobile_share_enabled = False
+        self.mobile_token = ""
+        self.mobile_token_expire_at = 0.0
+
+    def get_mobile_url(self, host_ip: str) -> str:
+        ip = str(host_ip or "").strip() or "127.0.0.1"
+        if not self.mobile_token:
+            self.enable_mobile_share(ttl_sec=0)
+        return f"http://{ip}:{self.port}/?token={self.mobile_token}"
+
+    def _extract_mobile_token(self, request: web.Request) -> str:
+        return str(
+            request.query.get("token")
+            or request.headers.get("X-Mobile-Token")
+            or ""
+        ).strip()
+
+    def _mobile_token_valid(self, token: str) -> bool:
+        if not self.mobile_share_enabled:
+            return False
+        if self.mobile_token_expire_at and time.time() > self.mobile_token_expire_at:
+            self.disable_mobile_share()
+            return False
+        return bool(token) and token == self.mobile_token
+
+    @staticmethod
+    def _mobile_forbidden_json() -> web.Response:
+        return web.json_response(
+            {"status": "error", "message": "Mobile access is disabled or token is invalid"},
+            status=403,
+        )
+
+    @staticmethod
+    def _safe_filename(filename: str) -> str:
+        base = os.path.basename(str(filename or "").strip())
+        if not base or base in (".", ".."):
+            return ""
+        return base
+
+    def _load_mobile_html(self) -> str:
+        if self._mobile_template_cache:
+            return self._mobile_template_cache
+
+        candidates = []
+        if hasattr(sys, "_MEIPASS"):
+            candidates.append(Path(sys._MEIPASS) / "ui" / "web_interface.html")
+        candidates.append(Path(__file__).resolve().parent.parent / "ui" / "web_interface.html")
+
+        for path in candidates:
+            try:
+                if path.exists():
+                    self._mobile_template_cache = path.read_text(encoding="utf-8")
+                    return self._mobile_template_cache
+            except Exception:
+                continue
+
+        self._mobile_template_cache = (
+            "<!doctype html><html><body>"
+            "<h3>V-Link Mobile</h3><p>Web interface file not found.</p>"
+            "</body></html>"
+        )
+        return self._mobile_template_cache
+
+    async def _handle_mobile_index(self, request: web.Request) -> web.Response:
+        token = self._extract_mobile_token(request)
+        if not self._mobile_token_valid(token):
+            return web.Response(
+                text=(
+                    "<!doctype html><html><body>"
+                    "<h3>V-Link Mobile</h3>"
+                    "<p>Доступ закрыт. Откройте окно подключения телефона в приложении V-Link.</p>"
+                    "</body></html>"
+                ),
+                content_type="text/html",
+                status=403,
+            )
+        html = self._load_mobile_html()
+        return web.Response(text=html, content_type="text/html")
+
+    async def _handle_mobile_files(self, request: web.Request) -> web.Response:
+        token = self._extract_mobile_token(request)
+        if not self._mobile_token_valid(token):
+            return self._mobile_forbidden_json()
+
+        os.makedirs(self.download_dir, exist_ok=True)
+        items = []
+        for entry in Path(self.download_dir).iterdir():
+            if not entry.is_file():
+                continue
+            try:
+                stat = entry.stat()
+                items.append(
+                    {
+                        "name": entry.name,
+                        "size": int(stat.st_size),
+                        "mtime": int(stat.st_mtime),
+                    }
+                )
+            except OSError:
+                continue
+        items.sort(key=lambda x: x["mtime"], reverse=True)
+        return web.json_response({"status": "ok", "files": items[:300]})
+
+    async def _handle_mobile_upload(self, request: web.Request) -> web.Response:
+        token = self._extract_mobile_token(request)
+        if not self._mobile_token_valid(token):
+            return self._mobile_forbidden_json()
+
+        os.makedirs(self.download_dir, exist_ok=True)
+        transfer_id = f"mobile-{int(time.time() * 1000)}"
+        saved = []
+
+        try:
+            reader = await request.multipart()
+            while True:
+                field = await reader.next()
+                if field is None:
+                    break
+                if not getattr(field, "filename", None):
+                    continue
+
+                name = self._safe_filename(field.filename)
+                if not name:
+                    continue
+
+                filepath = os.path.join(self.download_dir, name)
+                base, ext = os.path.splitext(filepath)
+                counter = 1
+                while os.path.exists(filepath):
+                    filepath = f"{base}_{counter}{ext}"
+                    counter += 1
+
+                if self.on_transfer_start:
+                    self.on_transfer_start(transfer_id, os.path.basename(filepath), 0, False)
+
+                received = 0
+                started = time.time()
+                last_update = started
+
+                async with aiofiles.open(filepath, "wb") as f:
+                    while True:
+                        chunk = await field.read_chunk(self.chunk_size_bytes)
+                        if not chunk:
+                            break
+                        await f.write(chunk)
+                        received += len(chunk)
+                        now = time.time()
+                        if now - last_update > 0.2 and self.on_transfer_progress:
+                            elapsed = now - started
+                            speed = received / elapsed if elapsed > 0 else 0
+                            self.on_transfer_progress(transfer_id, received, speed)
+                            last_update = now
+
+                if self.on_transfer_complete:
+                    self.on_transfer_complete(transfer_id, filepath)
+                saved.append(
+                    {
+                        "name": os.path.basename(filepath),
+                        "size": received,
+                    }
+                )
+
+            if not saved:
+                return web.json_response({"status": "error", "message": "No files provided"}, status=400)
+            return web.json_response({"status": "ok", "files": saved})
+
+        except Exception as e:
+            if self.on_transfer_error:
+                self.on_transfer_error(transfer_id, f"Mobile upload error: {e}")
+            return web.json_response({"status": "error", "message": str(e)}, status=500)
+
+    async def _handle_mobile_download(self, request: web.Request) -> web.StreamResponse:
+        token = self._extract_mobile_token(request)
+        if not self._mobile_token_valid(token):
+            return self._mobile_forbidden_json()
+
+        name = self._safe_filename(request.match_info.get("filename", ""))
+        if not name:
+            return web.json_response({"status": "error", "message": "Invalid filename"}, status=400)
+
+        path = Path(self.download_dir) / name
+        if not path.exists() or not path.is_file():
+            return web.json_response({"status": "error", "message": "File not found"}, status=404)
+
+        response = web.FileResponse(path)
+        response.headers["Content-Disposition"] = f'attachment; filename="{name}"'
+        return response
+
+    async def _handle_clipboard(self, request: web.Request) -> web.Response:
+        try:
+            if self.auth_token:
+                provided_token = request.headers.get('X-Auth-Token', '')
+                expected_token = hashlib.sha256(self.auth_token.encode("utf-8")).hexdigest()
+                if provided_token != expected_token:
+                    return web.json_response({'status': 'error', 'message': 'Unauthorized'}, status=401)
+
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                return web.json_response({'status': 'error', 'message': 'Invalid payload'}, status=400)
+
+            payload_type = str(payload.get("type", "")).lower()
+            if payload_type not in ("text", "image"):
+                return web.json_response({'status': 'error', 'message': 'Unsupported clipboard type'}, status=400)
+
+            content = payload.get("content", "")
+            if payload_type == "text":
+                if not isinstance(content, str):
+                    return web.json_response({'status': 'error', 'message': 'Text content must be string'}, status=400)
+                if len(content) > 200_000:
+                    return web.json_response({'status': 'error', 'message': 'Text payload too large'}, status=413)
+            else:
+                if not isinstance(content, str):
+                    return web.json_response({'status': 'error', 'message': 'Image content must be base64 string'}, status=400)
+                if len(content) > 14_000_000:
+                    return web.json_response({'status': 'error', 'message': 'Image payload too large'}, status=413)
+
+            if self.on_clipboard_update:
+                self.on_clipboard_update(payload)
+            return web.json_response({'status': 'ok'})
+        except Exception as e:
+            return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
     async def _handle_ping(self, request: web.Request) -> web.Response:
         return web.json_response({'status': 'ok', 'port': self.port})
@@ -276,6 +521,7 @@ class TransferServer:
 
     async def stop(self):
         self._running = False
+        self.disable_mobile_share()
         try:
             if self.site:
                 await self.site.stop()

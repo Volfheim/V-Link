@@ -223,9 +223,31 @@ class SettingsDialog(QDialog):
         behavior_layout.addWidget(auto_mode)
 
         content_layout.addWidget(behavior_group)
+
+        clipboard_group = QGroupBox("Буфер обмена")
+        clipboard_layout = QVBoxLayout(clipboard_group)
+        clipboard_layout.setSpacing(8)
+
+        self.clipboard_sync_check = CheckBoxWithMark("Синхронизация текста между устройствами")
+        self.clipboard_sync_check.setChecked(True)
+        self.clipboard_sync_check.toggled.connect(self._toggle_clipboard_options)
+        clipboard_layout.addWidget(self.clipboard_sync_check)
+
+        self.clipboard_image_check = CheckBoxWithMark("Синхронизация изображений (может быть медленнее)")
+        self.clipboard_image_check.setChecked(False)
+        clipboard_layout.addWidget(self.clipboard_image_check)
+
+        clipboard_hint = QLabel(
+            "Работает только между устройствами с запущенным V-Link в одной сети. "
+            "Для изображений действует ограничение по размеру, чтобы не нагружать сеть."
+        )
+        clipboard_hint.setWordWrap(True)
+        clipboard_hint.setStyleSheet("color: #64748b; font-size: 11px;")
+        clipboard_layout.addWidget(clipboard_hint)
+
+        content_layout.addWidget(clipboard_group)
         content_layout.addWidget(network_group)
 
-        # About group removed for v1.9.4 (robust update logic only)
         about_group = QGroupBox("О программе")
         about_layout = QVBoxLayout(about_group)
         about_layout.setSpacing(12)
@@ -295,11 +317,17 @@ class SettingsDialog(QDialog):
         self.minimize_check.setChecked(self.settings.get('start_minimized', False))
         self.autostart_check.setChecked(self.settings.get('autostart', False))
         self.close_to_tray_check.setChecked(self.settings.get('close_to_tray', True))
+        self.clipboard_sync_check.setChecked(self.settings.get('clipboard_sync_enabled', True))
+        self.clipboard_image_check.setChecked(self.settings.get('clipboard_sync_images', False))
         self._toggle_relay_fields(self.relay_mode_check.isChecked())
+        self._toggle_clipboard_options(self.clipboard_sync_check.isChecked())
 
     def _toggle_relay_fields(self, enabled: bool):
         self.relay_url_edit.setEnabled(enabled)
         self.relay_channel_edit.setEnabled(enabled)
+
+    def _toggle_clipboard_options(self, enabled: bool):
+        self.clipboard_image_check.setEnabled(enabled)
 
     def _save_and_close(self):
         relay_url = self.relay_url_edit.text().strip()
@@ -323,5 +351,7 @@ class SettingsDialog(QDialog):
             'start_minimized': self.minimize_check.isChecked(),
             'autostart': self.autostart_check.isChecked(),
             'close_to_tray': self.close_to_tray_check.isChecked(),
+            'clipboard_sync_enabled': self.clipboard_sync_check.isChecked(),
+            'clipboard_sync_images': self.clipboard_image_check.isChecked(),
         })
         self.accept()

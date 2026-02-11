@@ -1,0 +1,282 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>V-Link Mobile</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #111827;
+      --border: #334155;
+      --accent: #22c55e;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --danger: #ef4444;
+    }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: radial-gradient(circle at 20% 0%, #1e293b 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    .wrap {
+      width: 100%;
+      max-width: 760px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .card {
+      background: rgba(17, 24, 39, 0.85);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      backdrop-filter: blur(6px);
+    }
+    h1, h2 {
+      margin: 0 0 8px 0;
+      font-weight: 700;
+    }
+    h1 { font-size: 20px; }
+    h2 { font-size: 16px; color: #cbd5e1; }
+    p { margin: 0; color: var(--muted); }
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-weight: 600;
+      color: white;
+      background: linear-gradient(90deg, #16a34a, #22c55e);
+      cursor: pointer;
+    }
+    button.secondary {
+      background: #334155;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    input[type="file"] {
+      width: 100%;
+      color: var(--text);
+      background: #0b1220;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+    .status {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 6px;
+    }
+    .status.err { color: var(--danger); }
+    .status.ok { color: var(--accent); }
+    .files {
+      display: grid;
+      gap: 8px;
+    }
+    .file {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      background: rgba(15, 23, 42, 0.65);
+    }
+    .file .meta {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 420px;
+      font-weight: 600;
+    }
+    .small {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    a.download {
+      text-decoration: none;
+      color: white;
+      background: #3b82f6;
+      border-radius: 7px;
+      padding: 8px 10px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>V-Link Mobile</h1>
+      <p>Передача файлов между телефоном и ПК в локальной сети.</p>
+    </div>
+
+    <div class="card">
+      <h2>Загрузка на ПК</h2>
+      <input id="uploadInput" type="file" multiple>
+      <div class="row" style="margin-top:10px">
+        <button id="uploadBtn">Загрузить</button>
+      </div>
+      <div id="uploadStatus" class="status"></div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2>Файлы на ПК</h2>
+        <button id="refreshBtn" class="secondary">Обновить</button>
+      </div>
+      <div id="listStatus" class="status"></div>
+      <div id="files" class="files"></div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token") || "";
+    const uploadInput = document.getElementById("uploadInput");
+    const uploadBtn = document.getElementById("uploadBtn");
+    const refreshBtn = document.getElementById("refreshBtn");
+    const uploadStatus = document.getElementById("uploadStatus");
+    const listStatus = document.getElementById("listStatus");
+    const filesRoot = document.getElementById("files");
+
+    function humanSize(bytes) {
+      const units = ["B", "KB", "MB", "GB"];
+      let i = 0;
+      let v = Number(bytes || 0);
+      while (v >= 1024 && i < units.length - 1) {
+        v /= 1024;
+        i += 1;
+      }
+      return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+    }
+
+    function setStatus(node, text, kind) {
+      node.className = `status${kind ? " " + kind : ""}`;
+      node.textContent = text || "";
+    }
+
+    function ensureToken() {
+      if (!token) {
+        setStatus(uploadStatus, "Отсутствует token доступа.", "err");
+        setStatus(listStatus, "Откройте URL из приложения V-Link.", "err");
+        uploadBtn.disabled = true;
+        refreshBtn.disabled = true;
+        return false;
+      }
+      return true;
+    }
+
+    async function refreshFiles() {
+      if (!ensureToken()) return;
+      setStatus(listStatus, "Обновление списка...", "");
+      try {
+        const r = await fetch(`/api/mobile/files?token=${encodeURIComponent(token)}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        if (data.status !== "ok") throw new Error(data.message || "Ошибка сервера");
+
+        filesRoot.innerHTML = "";
+        const files = Array.isArray(data.files) ? data.files : [];
+        if (!files.length) {
+          setStatus(listStatus, "Файлы пока не найдены.", "");
+          return;
+        }
+        setStatus(listStatus, `Найдено: ${files.length}`, "ok");
+
+        for (const file of files) {
+          const row = document.createElement("div");
+          row.className = "file";
+
+          const meta = document.createElement("div");
+          meta.className = "meta";
+
+          const name = document.createElement("div");
+          name.className = "name";
+          name.textContent = file.name || "unknown";
+
+          const info = document.createElement("div");
+          info.className = "small";
+          info.textContent = `${humanSize(file.size)} · ${new Date((file.mtime || 0) * 1000).toLocaleString()}`;
+
+          meta.appendChild(name);
+          meta.appendChild(info);
+
+          const link = document.createElement("a");
+          link.className = "download";
+          link.href = `/api/mobile/download/${encodeURIComponent(file.name)}?token=${encodeURIComponent(token)}`;
+          link.textContent = "Скачать";
+          link.download = file.name || "";
+
+          row.appendChild(meta);
+          row.appendChild(link);
+          filesRoot.appendChild(row);
+        }
+      } catch (e) {
+        setStatus(listStatus, `Ошибка: ${e.message || e}`, "err");
+      }
+    }
+
+    async function uploadFiles() {
+      if (!ensureToken()) return;
+      const files = uploadInput.files;
+      if (!files || !files.length) {
+        setStatus(uploadStatus, "Сначала выберите файлы.", "err");
+        return;
+      }
+      const form = new FormData();
+      for (const f of files) {
+        form.append("file", f, f.name);
+      }
+
+      uploadBtn.disabled = true;
+      setStatus(uploadStatus, "Загрузка...", "");
+      try {
+        const r = await fetch(`/api/mobile/upload?token=${encodeURIComponent(token)}`, {
+          method: "POST",
+          body: form
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || data.status !== "ok") {
+          throw new Error(data.message || `HTTP ${r.status}`);
+        }
+        const count = Array.isArray(data.files) ? data.files.length : 0;
+        setStatus(uploadStatus, `Загружено файлов: ${count}`, "ok");
+        uploadInput.value = "";
+        await refreshFiles();
+      } catch (e) {
+        setStatus(uploadStatus, `Ошибка: ${e.message || e}`, "err");
+      } finally {
+        uploadBtn.disabled = false;
+      }
+    }
+
+    uploadBtn.addEventListener("click", uploadFiles);
+    refreshBtn.addEventListener("click", refreshFiles);
+    refreshFiles();
+  </script>
+</body>
+</html>

@@ -2,6 +2,19 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [2.0.0] - 2026-02-11
+### New Features
+* Mobile Web Share via QR code (Android/iOS in browser, no app install required).
+* Session token protection for mobile web access while mobile dialog is open.
+* Clipboard synchronization between V-Link peers:
+  * Text sync enabled by default.
+  * Image sync optional in settings (size-limited for stability).
+
+### Improvements
+* Added "Mobile" button in main window.
+* Added clipboard settings block in Settings dialog.
+* Fixed settings flow regression around manual update-check dialog.
+
 ## [1.9.5] - 2026-02-11
 ### Новые функции
 * **Ручная проверка обновлений**: Добавлена кнопка «Проверить обновления» в Настройки -> О программе (исправлен краш).

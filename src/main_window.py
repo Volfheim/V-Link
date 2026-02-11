@@ -27,9 +27,11 @@ from PyQt6.QtWidgets import (
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core import Settings, Updater, set_autostart
+from core.clipboard_sync import ClipboardSyncManager
 from version import __version__
 from network import DeviceDiscovery, RelayClient, TransferClient, TransferServer
 from ui import DeviceList, DropZone, TransferList, get_stylesheet
+from ui.mobile_connect_dialog import MobileConnectDialog
 from ui.settings_dialog import SettingsDialog
 
 SECURE_SHARED_SECRET = "vlink-secure-mode-v1"
@@ -47,6 +49,8 @@ class MainWindow(QMainWindow):
         self.client: Optional[TransferClient] = None
         self.relay: Optional[RelayClient] = None
         self.updater: Optional[Updater] = None
+        self.clipboard_sync: Optional[ClipboardSyncManager] = None
+        self.mobile_dialog: Optional[MobileConnectDialog] = None
         self.relay_peers: Dict[str, Dict] = {}
         self.selected_device: Optional[tuple] = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
@@ -70,6 +74,12 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._setup_tray()
         self._connect_signals()
+
+        self.clipboard_sync = ClipboardSyncManager(
+            self.settings,
+            peer_provider=self._clipboard_peer_endpoints,
+            parent=self,
+        )
 
     def _setup_window(self):
         self.setWindowTitle("V-Link")
@@ -150,6 +160,25 @@ class MainWindow(QMainWindow):
         )
         self.refresh_btn.clicked.connect(self._refresh_devices)
         header.addWidget(self.refresh_btn)
+
+        self.mobile_btn = QPushButton("Мобильный")
+        self.mobile_btn.setStyleSheet(
+            """
+            QPushButton {
+                background: transparent;
+                border: 1px solid #22c55e;
+                color: #86efac;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background: rgba(34, 197, 94, 0.15); }
+            """
+        )
+        self.mobile_btn.setToolTip("Подключить телефон через веб-интерфейс")
+        self.mobile_btn.clicked.connect(self._open_mobile_connect)
+        header.addWidget(self.mobile_btn)
 
         self.settings_btn = QPushButton("Настройки")
         self.settings_btn.setStyleSheet(
@@ -270,6 +299,83 @@ class MainWindow(QMainWindow):
         except Exception:
             QMessageBox.warning(self, "V-Link", f"Не удалось открыть папку:\n{folder}")
 
+    def _best_mobile_ip(self) -> str:
+        if not self.discovery:
+            return "127.0.0.1"
+        ips = self.discovery.get_local_ips()
+        if not ips:
+            return "127.0.0.1"
+        for ip in ips:
+            if str(ip).startswith("192.168.") or str(ip).startswith("10.") or str(ip).startswith("172."):
+                return ip
+        return self.discovery.get_local_ip()
+
+    def _open_mobile_connect(self):
+        if not self.server or not self.server.is_running():
+            QMessageBox.information(
+                self,
+                "V-Link",
+                "Сервисы ещё запускаются. Подождите несколько секунд и повторите.",
+            )
+            return
+
+        if self.mobile_dialog and self.mobile_dialog.isVisible():
+            self.mobile_dialog.raise_()
+            self.mobile_dialog.activateWindow()
+            return
+
+        token = self.server.enable_mobile_share(ttl_sec=0)
+        url = self.server.get_mobile_url(self._best_mobile_ip())
+
+        dialog = MobileConnectDialog(url=url, token=token, parent=self)
+        dialog.finished.connect(self._on_mobile_dialog_closed)
+        self.mobile_dialog = dialog
+        self.mobile_dialog.show()
+
+        self.status_label.setText("● Мобильный доступ активен")
+        self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+
+    def _on_mobile_dialog_closed(self):
+        if self.server:
+            self.server.disable_mobile_share()
+        self.mobile_dialog = None
+        if not self._low_power_mode:
+            self.status_label.setText("● Активен")
+            self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+
+    def _clipboard_peer_endpoints(self) -> List[tuple[str, int]]:
+        if not self.discovery:
+            return []
+        devices = self.discovery.get_devices()
+        local_ips = set(self.discovery.get_local_ips())
+        seen: set[tuple[str, int]] = set()
+        endpoints: List[tuple[str, int]] = []
+        for dev in devices.values():
+            if not bool(dev.get("reachable", True)):
+                continue
+            port = int(dev.get("port", self.settings.port) or self.settings.port)
+            ips = []
+            first_ip = str(dev.get("ip", "")).strip()
+            if first_ip:
+                ips.append(first_ip)
+            for alt_ip in dev.get("ips", []) or []:
+                alt = str(alt_ip).strip()
+                if alt:
+                    ips.append(alt)
+            for ip in ips:
+                if ip in local_ips or ip.startswith("127."):
+                    continue
+                pair = (ip, port)
+                if pair in seen:
+                    continue
+                seen.add(pair)
+                endpoints.append(pair)
+        return endpoints
+
+    def _on_clipboard_payload(self, payload: dict):
+        if self.clipboard_sync:
+            self.clipboard_sync.apply_remote_payload(payload)
+
     def _refresh_devices(self):
         if self.discovery and self.loop:
             self.device_list.clear_devices()
@@ -293,13 +399,44 @@ class MainWindow(QMainWindow):
         old_relay_channel = self.settings.relay_channel
         old_dir = self.settings.download_dir
         old_autostart = self.settings.autostart
+        old_clipboard_sync = self.settings.clipboard_sync_enabled
+        old_clipboard_images = self.settings.clipboard_sync_images
 
         dialog = SettingsDialog(self.settings, self)
-        # Use lambda to capture dialog instance
         dialog.check_updates_clicked.connect(lambda: self._manual_update_check(dialog))
-        
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
+
+        self.device_list.default_port = self.settings.port
+
+        if old_autostart != self.settings.autostart:
+            try:
+                set_autostart(self.settings.autostart)
+            except Exception as e:
+                self.settings.set('autostart', old_autostart)
+                QMessageBox.warning(self, "V-Link", f"Не удалось изменить автозапуск: {e}")
+
+        if self.clipboard_sync and (
+            old_clipboard_sync != self.settings.clipboard_sync_enabled
+            or old_clipboard_images != self.settings.clipboard_sync_images
+        ):
+            self.clipboard_sync.refresh_from_settings()
+
+        restart_needed = (
+            old_port != self.settings.port
+            or old_secure_mode != self.settings.secure_mode
+            or old_nonstandard_mode != self.settings.nonstandard_network_mode
+            or old_relay_mode != self.settings.relay_mode
+            or old_relay_url != self.settings.relay_server_url
+            or old_relay_channel != self.settings.relay_channel
+            or old_dir != self.settings.download_dir
+        )
+        if restart_needed and self.loop:
+            async def restart_flow():
+                await self._restart_services()
+                if self._low_power_mode:
+                    await self.enter_low_power_mode()
+            asyncio.run_coroutine_threadsafe(restart_flow(), self.loop)
 
     def _manual_update_check(self, settings_dialog):
         if not self.updater:
@@ -363,31 +500,6 @@ class MainWindow(QMainWindow):
             )
         finally:
             self._check_task = None
-        
-        self.device_list.default_port = self.settings.port
-
-        if old_autostart != self.settings.autostart:
-            try:
-                set_autostart(self.settings.autostart)
-            except Exception as e:
-                self.settings.set('autostart', old_autostart)
-                QMessageBox.warning(self, "V-Link", f"Не удалось изменить автозапуск: {e}")
-
-        restart_needed = (
-            old_port != self.settings.port
-            or old_secure_mode != self.settings.secure_mode
-            or old_nonstandard_mode != self.settings.nonstandard_network_mode
-            or old_relay_mode != self.settings.relay_mode
-            or old_relay_url != self.settings.relay_server_url
-            or old_relay_channel != self.settings.relay_channel
-            or old_dir != self.settings.download_dir
-        )
-        if restart_needed and self.loop:
-            async def restart_flow():
-                await self._restart_services()
-                if self._low_power_mode:
-                    await self.enter_low_power_mode()
-            asyncio.run_coroutine_threadsafe(restart_flow(), self.loop)
 
     async def _restart_services(self):
         await self.stop_services()
@@ -463,6 +575,7 @@ class MainWindow(QMainWindow):
         self.server.on_transfer_complete = self._on_transfer_complete
         self.server.on_transfer_error = self._on_transfer_error
         self.server.on_server_error = self._on_server_error
+        self.server.on_clipboard_update = self._on_clipboard_payload
         actual_port = await self.server.start()
 
         self.discovery = DeviceDiscovery(actual_port, compatibility_mode=compatibility_mode)
@@ -485,6 +598,10 @@ class MainWindow(QMainWindow):
         self.client.on_transfer_complete = self._on_transfer_complete
         self.client.on_transfer_error = self._on_transfer_error
         await self.client.start()
+
+        if self.clipboard_sync:
+            self.clipboard_sync.configure(self.loop, auth_secret)
+            self.clipboard_sync.refresh_from_settings()
 
         self.relay_peers.clear()
         relay_ready = False
@@ -560,6 +677,13 @@ class MainWindow(QMainWindow):
         if self._network_timer.isActive():
             self._network_timer.stop()
 
+        if self.mobile_dialog:
+            try:
+                self.mobile_dialog.close()
+            except Exception:
+                pass
+            self.mobile_dialog = None
+
         if self.relay:
             await self.relay.stop()
             self.relay = None
@@ -574,6 +698,9 @@ class MainWindow(QMainWindow):
         if self.discovery:
             await self.discovery.stop()
             self.discovery = None
+
+        if self.clipboard_sync:
+            await self.clipboard_sync.stop()
 
     async def enter_low_power_mode(self):
         if self._low_power_mode:

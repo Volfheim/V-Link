@@ -28,6 +28,9 @@ DEFAULT_SETTINGS = {
     'auto_check_updates': True,
     'last_update_check': '',
     'skipped_version': '',
+    'clipboard_sync_enabled': True,
+    'clipboard_sync_images': False,
+    'clipboard_node_id': '',
 }
 
 
@@ -107,7 +110,7 @@ class Settings:
 
     @property
     def nonstandard_network_mode(self) -> bool:
-        return bool(self.get('nonstandard_network_mode', True))
+        return bool(self.get('nonstandard_network_mode', False))
 
     @property
     def relay_mode(self) -> bool:
@@ -132,3 +135,20 @@ class Settings:
         self._save()
         return generated
 
+    @property
+    def clipboard_sync_enabled(self) -> bool:
+        return bool(self.get('clipboard_sync_enabled', True))
+
+    @property
+    def clipboard_sync_images(self) -> bool:
+        return bool(self.get('clipboard_sync_images', False))
+
+    @property
+    def clipboard_node_id(self) -> str:
+        current = str(self.get('clipboard_node_id', '') or '').strip()
+        if current:
+            return current
+        generated = uuid.uuid4().hex[:16]
+        self.settings['clipboard_node_id'] = generated
+        self._save()
+        return generated
