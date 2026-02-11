@@ -1,9 +1,8 @@
-"""Create GitHub Release for V-Link v2.0.0 and upload EXE."""
+"""Create GitHub Release for V-Link v2.0.1 and upload EXE."""
 import json, os, sys, urllib.request, urllib.error, mimetypes
 
-TAG = "v2.0.0"
+TAG = "v2.0.1"
 REPO = "Volfheim/V-Link"
-# User requested unversioned filename for the asset
 EXE = r"E:\Gravity\V-Link\dist\V-Link.exe"
 TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
 
@@ -22,23 +21,19 @@ if not TOKEN:
 if not TOKEN:
     sys.exit("No GitHub token found")
 
-BODY = r"""## What's Changed in v2.0.0
+BODY = r"""## Fixes & Stability (v2.0.1)
 
-### 🚀 Major Features
-- **📱 Mobile Web Share**: Transfer files between PC and Android/iOS devices instantly via QR code. No app installation required on the phone!
-- **📋 Clipboard Synchronization**: Automatically sync text copied on one PC to another.
-    - Works with Windows History (Win+V).
-    - Image sync support (optional).
+### 🚀 Startup & Autostart
+- **Fixed Autostart**: transitioned to a reliable `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` implementation.
+- **Auto-Sync**: Autostart registry key is now automatically synchronized/repaired on application start.
+- **Single Instance**: Added protection against multiple instances running simultaneously (prevents port conflicts).
 
-### ✨ Improvements
-- **Security Check**: Mobile access is protected by a session token generated for each connection dialog.
-- **UI**: Added "Mobile" button to the header.
-- **Versioning**: Executable is now cleanly named `V-Link.exe`, making it easier for scripts and shortcuts.
+### 🛠 Core Improvements
+- **Window Visibility**: Fixed a bug where the window could start hidden even if "Start Minimized" was disabled.
+- **Network Binding**: Improved fallback logic when default ports are busy or restricted.
+- **Icon**: Enhanced taskbar icon resolution on some Windows configurations.
 
-### 🛡️ Reliability
-- Full V-Link reliability from v1.9.5 (Robust Updater, Relay mode, etc.) is preserved.
-
-**Full Changelog**: https://github.com/Volfheim/V-Link/compare/v1.9.5...v2.0.0
+**Full Changelog**: https://github.com/Volfheim/V-Link/compare/v2.0.0...v2.0.1
 """
 
 headers = {
@@ -47,7 +42,7 @@ headers = {
     "Content-Type": "application/json",
 }
 
-# 1. Check if release exists and delete it
+# 1. Check if release exists and delete it (re-release support)
 try:
     url = f"https://api.github.com/repos/{REPO}/releases/tags/{TAG}"
     req = urllib.request.Request(url, headers=headers)
@@ -68,7 +63,7 @@ except urllib.error.HTTPError as e:
 print(f"Creating release {TAG}...")
 payload = json.dumps({
     "tag_name": TAG, 
-    "name": f"V-Link 2.0", 
+    "name": f"V-Link {TAG}", 
     "body": BODY.strip(), 
     "draft": False, 
     "prerelease": False

@@ -4,6 +4,7 @@ V-Link - Main Window
 
 import asyncio
 import os
+import socket
 import sys
 import time
 from typing import Dict, List, Optional
@@ -31,7 +32,6 @@ from core.clipboard_sync import ClipboardSyncManager
 from version import __version__
 from network import DeviceDiscovery, RelayClient, TransferClient, TransferServer
 from ui import DeviceList, DropZone, TransferList, get_stylesheet
-from ui.mobile_connect_dialog import MobileConnectDialog
 from ui.settings_dialog import SettingsDialog
 
 SECURE_SHARED_SECRET = "vlink-secure-mode-v1"
@@ -44,13 +44,14 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.settings = Settings()
+        self._ensure_autostart_registration()
         self.discovery: Optional[DeviceDiscovery] = None
         self.server: Optional[TransferServer] = None
         self.client: Optional[TransferClient] = None
         self.relay: Optional[RelayClient] = None
         self.updater: Optional[Updater] = None
         self.clipboard_sync: Optional[ClipboardSyncManager] = None
-        self.mobile_dialog: Optional[MobileConnectDialog] = None
+        self.mobile_dialog: Optional[object] = None
         self.relay_peers: Dict[str, Dict] = {}
         self.selected_device: Optional[tuple] = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
@@ -81,10 +82,38 @@ class MainWindow(QMainWindow):
             parent=self,
         )
 
+    def _ensure_autostart_registration(self):
+        try:
+            # Normalize autostart state on every startup:
+            # rewrites stale registry command (e.g. legacy "--autostart") and
+            # removes old Startup-folder scripts from previous versions.
+            set_autostart(bool(self.settings.autostart))
+        except Exception as e:
+            # Non-fatal: app should continue even if OS startup registration failed.
+            print(f"Autostart state sync failed: {e}")
+
     def _setup_window(self):
         self.setWindowTitle("V-Link")
         self.setMinimumSize(600, 700)
         self.resize(650, 750)
+        app = QApplication.instance()
+        if app and not app.windowIcon().isNull():
+            self.setWindowIcon(app.windowIcon())
+        else:
+            icon_candidates = []
+            if hasattr(sys, "_MEIPASS"):
+                icon_candidates.append(os.path.join(sys._MEIPASS, "app_icon.ico"))
+            icon_candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app_icon.ico"))
+            icon_candidates.append("app_icon.ico")
+            for candidate in icon_candidates:
+                try:
+                    if os.path.exists(candidate):
+                        icon = QIcon(candidate)
+                        if not icon.isNull():
+                            self.setWindowIcon(icon)
+                            break
+                except Exception:
+                    continue
         self.setStyleSheet(get_stylesheet())
 
     def _setup_ui(self):
@@ -231,14 +260,17 @@ class MainWindow(QMainWindow):
     def _setup_tray(self):
         self.tray_icon = QSystemTrayIcon(self)
 
-        icon_path = "app_icon.ico"
-        if hasattr(sys, '_MEIPASS'):
-            icon_path = os.path.join(sys._MEIPASS, icon_path)
-
-        if os.path.exists(icon_path):
-            self.tray_icon.setIcon(QIcon(icon_path))
+        app = QApplication.instance()
+        if app and not app.windowIcon().isNull():
+            self.tray_icon.setIcon(app.windowIcon())
         else:
-            self.tray_icon.setIcon(QIcon("app_icon.ico"))
+            icon_path = "app_icon.ico"
+            if hasattr(sys, '_MEIPASS'):
+                icon_path = os.path.join(sys._MEIPASS, icon_path)
+            if os.path.exists(icon_path):
+                self.tray_icon.setIcon(QIcon(icon_path))
+            else:
+                self.tray_icon.setIcon(QIcon("app_icon.ico"))
         self.tray_icon.setToolTip(f"V-Link v{__version__}")
 
         tray_menu = QMenu()
@@ -275,9 +307,25 @@ class MainWindow(QMainWindow):
 
     def _detect_hotspot_environment(self) -> bool:
         try:
-            probe = DeviceDiscovery(self.settings.port, compatibility_mode=False)
-            ips = probe._list_local_ipv4()  # local probe only, no network actions
-            return any(self._is_hotspot_ip(ip) for ip in ips)
+            ips: set[str] = set()
+
+            # Fast route check, avoids heavy shell probes on startup.
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.connect(("8.8.8.8", 80))
+                ips.add(s.getsockname()[0])
+            except Exception:
+                pass
+            finally:
+                s.close()
+
+            try:
+                _, _, host_ips = socket.gethostbyname_ex(socket.gethostname())
+                ips.update(host_ips)
+            except Exception:
+                pass
+
+            return any(self._is_hotspot_ip(ip) for ip in ips if ip and not ip.startswith("127."))
         except Exception:
             return False
 
@@ -311,6 +359,8 @@ class MainWindow(QMainWindow):
         return self.discovery.get_local_ip()
 
     def _open_mobile_connect(self):
+        from ui.mobile_connect_dialog import MobileConnectDialog
+
         if not self.server or not self.server.is_running():
             QMessageBox.information(
                 self,
@@ -552,124 +602,138 @@ class MainWindow(QMainWindow):
         self._services_starting = True
         self._services_ready = False
         self.loop = asyncio.get_event_loop()
-        secure_mode = self.settings.secure_mode
-        manual_nonstandard_mode = self.settings.nonstandard_network_mode
-        self._hotspot_detected = self._detect_hotspot_environment()
-        compatibility_mode = manual_nonstandard_mode or self._hotspot_detected
-        self._effective_nonstandard_mode = compatibility_mode
-        relay_mode = self.settings.relay_mode
-        relay_url = self.settings.relay_server_url
-        auth_secret = SECURE_SHARED_SECRET if secure_mode else ""
-        verify_checksum = secure_mode
+        try:
+            secure_mode = self.settings.secure_mode
+            manual_nonstandard_mode = self.settings.nonstandard_network_mode
+            self._hotspot_detected = self._detect_hotspot_environment()
+            compatibility_mode = manual_nonstandard_mode or self._hotspot_detected
+            self._effective_nonstandard_mode = compatibility_mode
+            relay_mode = self.settings.relay_mode
+            relay_url = self.settings.relay_server_url
+            auth_secret = SECURE_SHARED_SECRET if secure_mode else ""
+            verify_checksum = secure_mode
+            requested_port = int(self.settings.port)
 
-        self.server = TransferServer(
-            self.settings.port,
-            self.settings.download_dir,
-            auth_token=auth_secret,
-            chunk_size_bytes=4 * 1024 * 1024,
-            verify_checksum=verify_checksum,
-            enable_encryption=secure_mode,
-        )
-        self.server.on_transfer_start = self._on_incoming_transfer_start
-        self.server.on_transfer_progress = self._on_transfer_progress
-        self.server.on_transfer_complete = self._on_transfer_complete
-        self.server.on_transfer_error = self._on_transfer_error
-        self.server.on_server_error = self._on_server_error
-        self.server.on_clipboard_update = self._on_clipboard_payload
-        actual_port = await self.server.start()
+            self.server = TransferServer(
+                requested_port,
+                self.settings.download_dir,
+                auth_token=auth_secret,
+                chunk_size_bytes=4 * 1024 * 1024,
+                verify_checksum=verify_checksum,
+                enable_encryption=secure_mode,
+            )
+            self.server.on_transfer_start = self._on_incoming_transfer_start
+            self.server.on_transfer_progress = self._on_transfer_progress
+            self.server.on_transfer_complete = self._on_transfer_complete
+            self.server.on_transfer_error = self._on_transfer_error
+            self.server.on_server_error = self._on_server_error
+            self.server.on_clipboard_update = self._on_clipboard_payload
+            actual_port = await self.server.start()
 
-        self.discovery = DeviceDiscovery(actual_port, compatibility_mode=compatibility_mode)
-        self.discovery.on_device_added = self._on_device_added
-        self.discovery.on_device_removed = self._on_device_removed
-        self.discovery.on_error = self._on_server_error
-        await self.discovery.start()
-
-        self.client = TransferClient(
-            auth_token=auth_secret,
-            base_chunk_size_bytes=4 * 1024 * 1024,
-            verify_checksum=verify_checksum,
-            auto_tune=True,
-            adaptive_profile=self.settings.adaptive_profile,
-            enable_encryption=secure_mode,
-            compatibility_mode=compatibility_mode,
-        )
-        self.client.on_transfer_start = self._on_outgoing_transfer_start
-        self.client.on_transfer_progress = self._on_transfer_progress
-        self.client.on_transfer_complete = self._on_transfer_complete
-        self.client.on_transfer_error = self._on_transfer_error
-        await self.client.start()
-
-        if self.clipboard_sync:
-            self.clipboard_sync.configure(self.loop, auth_secret)
-            self.clipboard_sync.refresh_from_settings()
-
-        self.relay_peers.clear()
-        relay_ready = False
-        if relay_mode and relay_url:
-            try:
-                self.relay = RelayClient(
-                    server_url=relay_url,
-                    channel=self.settings.relay_channel,
-                    client_id=self.settings.relay_client_id,
-                    display_name=self.discovery.get_hostname() if self.discovery else "V-Link",
-                    download_dir=self.settings.download_dir,
-                    secure_mode=secure_mode,
-                    auth_token=auth_secret,
+            if actual_port != requested_port:
+                self.settings.set("port", int(actual_port))
+                self.device_list.default_port = int(actual_port)
+                self._on_server_error(
+                    f"Порт {requested_port} недоступен, автоматически выбран {actual_port}"
                 )
-                self.relay.on_peer_added = self._on_relay_peer_added
-                self.relay.on_peer_removed = self._on_relay_peer_removed
-                self.relay.on_error = self._on_server_error
-                self.relay.on_transfer_start = self._on_relay_transfer_start
-                self.relay.on_transfer_progress = self._on_transfer_progress
-                self.relay.on_transfer_complete = self._on_transfer_complete
-                self.relay.on_transfer_error = self._on_transfer_error
-                await self.relay.start()
-                relay_ready = True
-            except Exception as e:
-                self._on_server_error(f"Relay init error: {e}")
-                if self.relay:
-                    try:
-                        await self.relay.stop()
-                    except Exception:
-                        pass
+
+            self.discovery = DeviceDiscovery(actual_port, compatibility_mode=compatibility_mode)
+            self.discovery.on_device_added = self._on_device_added
+            self.discovery.on_device_removed = self._on_device_removed
+            self.discovery.on_error = self._on_server_error
+            await self.discovery.start()
+
+            self.client = TransferClient(
+                auth_token=auth_secret,
+                base_chunk_size_bytes=4 * 1024 * 1024,
+                verify_checksum=verify_checksum,
+                auto_tune=True,
+                adaptive_profile=self.settings.adaptive_profile,
+                enable_encryption=secure_mode,
+                compatibility_mode=compatibility_mode,
+            )
+            self.client.on_transfer_start = self._on_outgoing_transfer_start
+            self.client.on_transfer_progress = self._on_transfer_progress
+            self.client.on_transfer_complete = self._on_transfer_complete
+            self.client.on_transfer_error = self._on_transfer_error
+            await self.client.start()
+
+            if self.clipboard_sync:
+                self.clipboard_sync.configure(self.loop, auth_secret)
+                self.clipboard_sync.refresh_from_settings()
+
+            self.relay_peers.clear()
+            relay_ready = False
+            if relay_mode and relay_url:
+                try:
+                    self.relay = RelayClient(
+                        server_url=relay_url,
+                        channel=self.settings.relay_channel,
+                        client_id=self.settings.relay_client_id,
+                        display_name=self.discovery.get_hostname() if self.discovery else "V-Link",
+                        download_dir=self.settings.download_dir,
+                        secure_mode=secure_mode,
+                        auth_token=auth_secret,
+                    )
+                    self.relay.on_peer_added = self._on_relay_peer_added
+                    self.relay.on_peer_removed = self._on_relay_peer_removed
+                    self.relay.on_error = self._on_server_error
+                    self.relay.on_transfer_start = self._on_relay_transfer_start
+                    self.relay.on_transfer_progress = self._on_transfer_progress
+                    self.relay.on_transfer_complete = self._on_transfer_complete
+                    self.relay.on_transfer_error = self._on_transfer_error
+                    await self.relay.start()
+                    relay_ready = True
+                except Exception as e:
+                    self._on_server_error(f"Relay init error: {e}")
+                    if self.relay:
+                        try:
+                            await self.relay.stop()
+                        except Exception:
+                            pass
+                    self.relay = None
+                    self.relay_peers.clear()
+                    self._clear_relay_devices()
+            else:
                 self.relay = None
-                self.relay_peers.clear()
                 self._clear_relay_devices()
-        else:
-            self.relay = None
-            self._clear_relay_devices()
 
-        self._update_ip_label()
-        if relay_mode and not relay_url:
-            self.status_label.setText("● Активен (Relay включён, но URL не задан)")
-            self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
-        elif self._hotspot_detected and not manual_nonstandard_mode:
-            self.status_label.setText("● Активен (обнаружен хот-спот, включён совместимый режим)")
-            self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
-        elif compatibility_mode and relay_ready:
-            self.status_label.setText("● Активен (нестандартные сети + Relay)")
-            self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
-        elif compatibility_mode:
-            self.status_label.setText("● Активен (режим нестандартных сетей)")
-            self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
-        elif relay_ready:
-            self.status_label.setText("● Активен (Relay)")
-            self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
-        else:
-            self.status_label.setText("● Активен")
-            self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+            self._update_ip_label()
+            if relay_mode and not relay_url:
+                self.status_label.setText("● Активен (Relay включён, но URL не задан)")
+                self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
+            elif self._hotspot_detected and not manual_nonstandard_mode:
+                self.status_label.setText("● Активен (обнаружен хот-спот, включён совместимый режим)")
+                self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+            elif compatibility_mode and relay_ready:
+                self.status_label.setText("● Активен (нестандартные сети + Relay)")
+                self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+            elif compatibility_mode:
+                self.status_label.setText("● Активен (режим нестандартных сетей)")
+                self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+            elif relay_ready:
+                self.status_label.setText("● Активен (Relay)")
+                self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+            else:
+                self.status_label.setText("● Активен")
+                self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
 
-        if not self._network_timer.isActive():
-            self._network_timer.start()
+            if not self._network_timer.isActive():
+                self._network_timer.start()
 
-        self._services_ready = True
-        self._services_starting = False
+            self._services_ready = True
 
-        # Auto-update check (non-blocking, respects 12h cache unless forced on startup?)
-        # User requested: "check updates at program launch, cache 12h only for tray restore"
-        # So we force check here.
-        self._init_updater()
-        asyncio.ensure_future(self._check_for_update(force=True))
+            # Auto-update check (non-blocking, respects 12h cache unless forced on startup?)
+            # User requested: "check updates at program launch, cache 12h only for tray restore"
+            # So we force check here.
+            self._init_updater()
+            asyncio.ensure_future(self._check_for_update(force=True))
+        except Exception:
+            self._services_ready = False
+            await self.stop_services()
+            raise
+        finally:
+            self._services_starting = False
 
     async def stop_services(self):
         self._services_ready = False

@@ -11,6 +11,7 @@ import secrets
 import string
 import socket
 import errno
+import ipaddress
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -460,32 +461,102 @@ class TransferServer:
         self.runner = web.AppRunner(self.app)
         await self.runner.setup()
 
-        async def start_on_port(try_port: int) -> bool:
+        def candidate_hosts() -> list[str]:
+            hosts = ["0.0.0.0"]
+
+            def add_host(ip: str):
+                ip = str(ip or "").strip()
+                if not ip or ip in hosts:
+                    return
+                try:
+                    addr = ipaddress.ip_address(ip)
+                    if addr.version != 4 or addr.is_loopback or addr.is_link_local or addr.is_multicast:
+                        return
+                except ValueError:
+                    return
+                hosts.append(ip)
+
+            def host_rank(ip: str) -> tuple[int, str]:
+                if ip == "0.0.0.0":
+                    return (0, ip)
+                if ip.startswith("192.168.137."):
+                    return (1, ip)
+                if ip.startswith("192.168."):
+                    return (2, ip)
+                if ip.startswith("10."):
+                    return (3, ip)
+                if ip.startswith("172."):
+                    return (4, ip)
+                return (5, ip)
+
             try:
-                self.site = web.TCPSite(self.runner, '0.0.0.0', try_port)
-                await self.site.start()
-                bound_port = try_port
-                if try_port == 0:
-                    server_obj = getattr(self.site, "_server", None)
-                    sockets = getattr(server_obj, "sockets", None) or []
-                    if sockets:
-                        bound_port = int(sockets[0].getsockname()[1])
-                self.port = int(bound_port)
-                self._running = True
-                return True
-            except OSError as e:
-                is_addr_in_use = (
-                    'address already in use' in str(e).lower()
-                    or e.errno in (10048, errno.EADDRINUSE)
-                )
-                if is_addr_in_use:
+                probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                try:
+                    probe.connect(("8.8.8.8", 80))
+                    add_host(probe.getsockname()[0])
+                finally:
+                    probe.close()
+            except Exception:
+                pass
+
+            try:
+                _, _, host_ips = socket.gethostbyname_ex(socket.gethostname())
+                for ip in host_ips:
+                    add_host(ip)
+            except Exception:
+                pass
+            primary = hosts[:1]
+            rest = sorted(hosts[1:], key=host_rank)
+            return primary + rest
+
+        async def start_on_port(try_port: int) -> bool:
+            last_bind_error: Optional[OSError] = None
+            for host in candidate_hosts():
+                try:
+                    self.site = web.TCPSite(self.runner, host, try_port)
+                    await self.site.start()
+                    bound_port = try_port
+                    if try_port == 0:
+                        server_obj = getattr(self.site, "_server", None)
+                        sockets = getattr(server_obj, "sockets", None) or []
+                        if sockets:
+                            bound_port = int(sockets[0].getsockname()[1])
+                    self.port = int(bound_port)
+                    self._running = True
+                    return True
+                except OSError as e:
+                    last_bind_error = e
                     self.site = None
-                    return False
-                raise
+                    continue
+
+            if last_bind_error:
+                text = str(last_bind_error).lower()
+                winerror = int(getattr(last_bind_error, "winerror", 0) or 0)
+                err_no = int(getattr(last_bind_error, "errno", 0) or 0)
+                if self.on_server_error and (
+                    winerror in (10013, 10048)
+                    or err_no in (10013, 10048, errno.EADDRINUSE, errno.EACCES, errno.EPERM)
+                    or "forbidden by its access permissions" in text
+                    or "address already in use" in text
+                ):
+                    self.on_server_error(
+                        f"Порт {try_port} недоступен: {last_bind_error}. Поиск следующего порта..."
+                    )
+            return False
 
         try:
+            tried_ports = set()
             for port_offset in range(PORT_RANGE):
                 try_port = self.requested_port + port_offset
+                tried_ports.add(int(try_port))
+                if await start_on_port(try_port):
+                    return self.port
+
+            # Stable fallback range to avoid random port jumps across restarts.
+            for try_port in range(17864, 17896):
+                if try_port in tried_ports:
+                    continue
+                tried_ports.add(try_port)
                 if await start_on_port(try_port):
                     return self.port
 

@@ -119,14 +119,18 @@ class DeviceDiscovery:
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = 0
-            output = subprocess.check_output(
+            proc = subprocess.run(
                 ["ipconfig"],
+                capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="ignore",
                 startupinfo=startupinfo,
                 creationflags=0x08000000,  # CREATE_NO_WINDOW
+                timeout=1.8,
+                check=False,
             )
+            output = proc.stdout or ""
             for line in output.splitlines():
                 if "IPv4" in line:
                     if ":" in line:
@@ -322,7 +326,7 @@ class DeviceDiscovery:
         self.browser = None
         await self._stop_compatibility()
 
-    def _check_output_hidden(self, command: List[str]) -> str:
+    def _check_output_hidden(self, command: List[str], timeout_sec: float = 1.2) -> str:
         startupinfo = None
         creationflags = 0
         try:
@@ -334,14 +338,18 @@ class DeviceDiscovery:
             startupinfo = None
             creationflags = 0
 
-        return subprocess.check_output(
+        proc = subprocess.run(
             command,
+            capture_output=True,
             text=True,
             encoding="utf-8",
             errors="ignore",
             startupinfo=startupinfo,
             creationflags=creationflags,
+            timeout=timeout_sec,
+            check=False,
         )
+        return proc.stdout or ""
 
     def _build_compat_payload(self, packet_type: str) -> bytes:
         payload = {
