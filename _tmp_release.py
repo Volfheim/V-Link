@@ -1,9 +1,9 @@
 """Create GitHub Release for V-Link v1.9.3 and upload EXE."""
 import json, os, sys, urllib.request, urllib.error, mimetypes
 
-TAG = "v1.9.5"
+TAG = "v1.9.4"
 REPO = "Volfheim/V-Link"
-EXE = r"E:\Gravity\V-Link\dist\V-Link-1.9.5.exe"
+EXE = r"E:\Gravity\V-Link\dist\V-Link-1.9.4.exe"
 TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
 if not TOKEN:
     import subprocess as _sp
@@ -22,20 +22,17 @@ if not TOKEN:
 
 BODY = r"""## What's Changed
 
-### 🚀 Critical Fixes & Features
-- **Updater Hanging Fix**: Resolved issue where updater would hang on `find` command on localized Windows versions.
-  - Replaced `tasklist | find` with robust `tasklist /FI` exit code check.
-  - This prevents the empty CMD window from freezing during update.
-
-- **Atomic Update Strategy**: (Previously added) Safe update flow preventing DLL lock errors.
-- **Manual Update Check**: Added "Check for updates" button in Settings -> About (no crashes).
-
-### ✨ Polishing
-- **Cleaner UI**: Removed "Powered by Volfheim" footer from Settings.
-- **Robustness**: Enhanced file handling during updates for Windows 10/11.
+### 🔄 Completely Reworked Update System
+The auto-update mechanism has been rebuilt from the ground up for maximum reliability:
+- **Atomic Updates**: Downloads to a temporary file, unblocks it, and performs a safe atomic replacement.
+- **No More "DLL Load Failed"**: Solves issues with file locking and corrupted updates.
+- **Fail-Safe Logic**: Uses robust process waiting (`tasklist` loop) to ensure the old version is truly closed before replacing.
+- **Automatic Cleanup**: Old versions and temporary files are automatically removed after a successful update.
+- **Loop Prevention**: Smart flags prevent infinite update loops.
 
 ### Notes
-- This is the recommended version (Clean UI + Manual Update).
+- **UI**: "Powered by Volfheim" footer is present.
+- **Stable Release**: This version focuses on fixing the update flow once and for all.
 """
 
 headers = {

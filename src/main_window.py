@@ -17,7 +17,6 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
-    QProgressDialog,
     QPushButton,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -298,75 +297,9 @@ class MainWindow(QMainWindow):
         old_autostart = self.settings.autostart
 
         dialog = SettingsDialog(self.settings, self)
-        # Use lambda to capture dialog instance
-        dialog.check_updates_clicked.connect(lambda: self._manual_update_check(dialog))
-        
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
 
-    def _manual_update_check(self, settings_dialog):
-        if not self.updater:
-            return
-
-        # Create a modal progress dialog parented to the settings dialog.
-        # WindowModal ensures it blocks input to settings but stays on top.
-        self._progress_dialog = QProgressDialog("Поиск обновлений...", "Отмена", 0, 0, settings_dialog)
-        self._progress_dialog.setWindowTitle("V-Link")
-        self._progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        self._progress_dialog.setAutoClose(False)
-        self._progress_dialog.setAutoReset(False)
-        self._progress_dialog.setMinimumDuration(0)
-        
-        # Connect cancel button
-        self._progress_dialog.canceled.connect(self._on_manual_check_canceled)
-        
-        self._progress_dialog.show()
-
-        # Run check in the main asyncio loop (we are in main thread, so ensure_future is safe)
-        if self.loop:
-            self._check_task = asyncio.ensure_future(self._run_manual_check(settings_dialog))
-
-    def _on_manual_check_canceled(self):
-        if hasattr(self, '_check_task') and self._check_task:
-            self._check_task.cancel()
-
-    async def _run_manual_check(self, settings_dialog):
-        try:
-            # Force check ignoring 12h timer
-            info = await self.updater.check_for_update(force=True)
-            
-            if self._progress_dialog:
-                self._progress_dialog.close()
-                self._progress_dialog = None
-
-            if info:
-                # Close settings dialog so user can see download progress in main window
-                if settings_dialog:
-                    settings_dialog.close()
-                # If update found, show the update dialog immediately
-                self._show_update_dialog()
-            else:
-                QMessageBox.information(
-                    settings_dialog, 
-                    "V-Link", 
-                    "У вас установлена последняя версия."
-                )
-
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            if self._progress_dialog:
-                self._progress_dialog.close()
-                self._progress_dialog = None
-            
-            QMessageBox.warning(
-                settings_dialog, 
-                "V-Link", 
-                f"Ошибка проверки:\n{e}"
-            )
-        finally:
-            self._check_task = None
-        
         self.device_list.default_port = self.settings.port
 
         if old_autostart != self.settings.autostart:
@@ -1009,6 +942,10 @@ class MainWindow(QMainWindow):
             QMetaObject.invokeMethod(self, "_show_security_mismatch_warning", Qt.ConnectionType.QueuedConnection)
 
     def closeEvent(self, event: QCloseEvent):
+        if self._quitting:
+            event.accept()
+            return
+
         if self.settings.close_to_tray:
             event.ignore()
             self.hide()
@@ -1022,17 +959,25 @@ class MainWindow(QMainWindow):
             )
             return
 
-        event.accept()
+        event.ignore()
         self._quit_app()
 
     def _on_tray_activated(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
             self._show_window()
 
     def _show_window(self):
+        self.setWindowState(
+            (self.windowState() & ~Qt.WindowState.WindowMinimized)
+            | Qt.WindowState.WindowActive
+        )
+        self.showNormal()
         self.show()
-        self.activateWindow()
         self.raise_()
+        self.activateWindow()
         if self.loop:
             asyncio.run_coroutine_threadsafe(self.exit_low_power_mode(), self.loop)
             asyncio.run_coroutine_threadsafe(self._check_for_update(), self.loop)
@@ -1155,6 +1100,9 @@ class MainWindow(QMainWindow):
     def _apply_update(self, downloaded_path: str):
         from pathlib import Path
 
+        if not self.updater:
+            return
+
         reply = QMessageBox.question(
             self,
             "V-Link",
@@ -1173,8 +1121,35 @@ class MainWindow(QMainWindow):
         self.status_label.setText("● Применение обновления...")
         self.status_label.setStyleSheet("color: #6b5ce7; font-size: 12px;")
 
-        self.updater.apply_update(Path(downloaded_path))
-        self._quit_app()
+        started = self.updater.apply_update(Path(downloaded_path))
+        if not started:
+            self.status_label.setText("● Не удалось запустить обновление")
+            self.status_label.setStyleSheet("color: #ef4444; font-size: 12px;")
+            self.update_btn.setEnabled(True)
+            return
+        self._quit_for_update()
+
+    def _quit_for_update(self):
+        """
+        Update path must release process quickly.
+        We still try graceful shutdown, but enforce hard exit timeout.
+        """
+        if self._quitting:
+            return
+        self._quitting = True
+        self.status_label.setText("● Перезапуск для обновления...")
+        self.status_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
+        self.tray_icon.hide()
+
+        if self.loop:
+            try:
+                asyncio.run_coroutine_threadsafe(self.stop_services(), self.loop)
+            except Exception:
+                pass
+
+        QTimer.singleShot(50, self.close)
+        QTimer.singleShot(700, QApplication.quit)
+        QTimer.singleShot(2500, lambda: os._exit(0))
 
     def _quit_app(self):
         if self._quitting:
