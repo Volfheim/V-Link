@@ -257,6 +257,7 @@ class DeviceCard(QFrame):
 
 class DeviceList(QFrame):
     device_selected = pyqtSignal(str, str, int)
+    refresh_clicked = pyqtSignal()
 
     def __init__(self, default_port: int = 8765, parent=None):
         super().__init__(parent)
@@ -279,8 +280,6 @@ class DeviceList(QFrame):
 
         self.count_label = QLabel("0 устройств")
         self.count_label.setStyleSheet("font-size: 12px; color: #94a3b8;")
-        header.addWidget(self.count_label)
-
         add_btn = QPushButton("+ IP")
         add_btn.setToolTip("Добавить устройство по IP-адресу")
         add_btn.setStyleSheet(
@@ -299,6 +298,24 @@ class DeviceList(QFrame):
         )
         add_btn.clicked.connect(self._show_manual_connect)
         header.addWidget(add_btn)
+
+        self.refresh_btn = QPushButton()
+        self.refresh_btn.setToolTip("Обновить список устройств")
+        self.refresh_btn.setFixedSize(28, 28)
+        self.refresh_btn.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_BrowserReload))
+        self.refresh_btn.setStyleSheet(
+            """
+            QPushButton {
+                background: transparent;
+                border: 1px solid #6b5ce7;
+                border-radius: 4px;
+            }
+            QPushButton:hover { background: rgba(107, 92, 231, 0.2); }
+            """
+        )
+        self.refresh_btn.clicked.connect(self.refresh_clicked.emit)
+        header.addWidget(self.refresh_btn)
+        
         layout.addLayout(header)
 
         scroll = QScrollArea()
@@ -390,3 +407,5 @@ class DeviceList(QFrame):
             self._selected_card.device_ip,
             self._selected_card.device_port,
         )
+
+

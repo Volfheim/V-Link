@@ -2,6 +2,19 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [2.0.2] - 2026-02-11
+### UX/UI Polish
+* **Header Layout**: Fixed issue where the update button would overlap or hide the application title. Titles now have a minimum width to prevent compression.
+* **Localization**: The "Restart after update" dialog now uses localized "Да/Нет" buttons instead of system defaults (Yes/No).
+* **Terminology**: Renamed "Мобильный" button to "Мобильник".
+
+## [2.0.1] - 2026-02-11
+### Fixes & Stability
+* **Fixed Autostart**: Transitioned to reliable registry-based autostart with auto-repair on launch.
+* **Single Instance**: Added protection against multiple instances (port conflict prevention).
+* **Window Visibility**: Fixed hidden window bug on startup.
+* **Network**: Improved port fallback and binding logic.
+
 ## [2.0.0] - 2026-02-11
 ### New Features
 * Mobile Web Share via QR code (Android/iOS in browser, no app install required).

@@ -142,10 +142,12 @@ class MainWindow(QMainWindow):
 
         title_layout = QVBoxLayout()
         title = QLabel("V-Link")
+        title.setMinimumWidth(120)
         title.setObjectName("titleLabel")
         title_layout.addWidget(title)
 
         subtitle = QLabel("Быстрая передача файлов в локальной сети")
+        subtitle.setMinimumWidth(250)
         subtitle.setObjectName("subtitleLabel")
         title_layout.addWidget(subtitle)
 
@@ -172,25 +174,7 @@ class MainWindow(QMainWindow):
         self.update_btn.setVisible(False)
         header.addWidget(self.update_btn)
 
-        self.refresh_btn = QPushButton()
-        self.refresh_btn.setToolTip("Обновить список устройств")
-        self.refresh_btn.setFixedSize(36, 36)
-        style = self.refresh_btn.style()
-        self.refresh_btn.setIcon(style.standardIcon(style.StandardPixmap.SP_BrowserReload))
-        self.refresh_btn.setStyleSheet(
-            """
-            QPushButton {
-                background: transparent;
-                border: 1px solid #6b5ce7;
-                border-radius: 6px;
-            }
-            QPushButton:hover { background: rgba(107, 92, 231, 0.2); }
-            """
-        )
-        self.refresh_btn.clicked.connect(self._refresh_devices)
-        header.addWidget(self.refresh_btn)
-
-        self.mobile_btn = QPushButton("Мобильный")
+        self.mobile_btn = QPushButton("Мобильник")
         self.mobile_btn.setStyleSheet(
             """
             QPushButton {
@@ -300,6 +284,7 @@ class MainWindow(QMainWindow):
     def _connect_signals(self):
         self.drop_zone.files_dropped.connect(self._on_files_dropped)
         self.device_list.device_selected.connect(self._on_device_selected)
+        self.device_list.refresh_clicked.connect(self._refresh_devices)
 
     @staticmethod
     def _is_hotspot_ip(ip: str) -> bool:
@@ -1358,16 +1343,20 @@ class MainWindow(QMainWindow):
         if not self.updater:
             return
 
-        reply = QMessageBox.question(
-            self,
-            "V-Link",
-            "Обновление скачано. Перезапустить приложение?\n\n"
+        msg = QMessageBox(self)
+        msg.setWindowTitle("V-Link")
+        msg.setIcon(QMessageBox.Icon.Question)
+        msg.setText("Обновление скачано. Перезапустить приложение?")
+        msg.setInformativeText(
             "V-Link закроется, обновится и запустится заново.\n"
-            "Настройки будут сохранены.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
+            "Настройки будут сохранены."
         )
-        if reply != QMessageBox.StandardButton.Yes:
+        btn_yes = msg.addButton("Да", QMessageBox.ButtonRole.YesRole)
+        btn_no = msg.addButton("Нет", QMessageBox.ButtonRole.NoRole)
+        msg.setDefaultButton(btn_yes)
+        msg.exec()
+
+        if msg.clickedButton() != btn_yes:
             self.status_label.setText("● Обновление отложено")
             self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
             self.update_btn.setEnabled(True)
