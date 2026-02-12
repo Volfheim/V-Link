@@ -1,7 +1,7 @@
-"""Create GitHub Release for V-Link v2.0.1 and upload EXE."""
+"""Create GitHub Release for V-Link v2.1.3 and upload EXE."""
 import json, os, sys, urllib.request, urllib.error, mimetypes
 
-TAG = "v2.1.2"
+TAG = "v2.1.3"
 REPO = "Volfheim/V-Link"
 EXE = r"E:\Gravity\V-Link\dist\V-Link.exe"
 TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
@@ -21,14 +21,16 @@ if not TOKEN:
 if not TOKEN:
     sys.exit("No GitHub token found")
 
-BODY = r"""## 💄 Feedback Polish (v2.1.2)
+BODY = r"""## 💎 Visual Polish (v2.1.3)
 
-UX Improvement based on feedback.
+Refined branding and UI aesthetics.
 
 ### ✨ Changes
-- **Access Denied Page**: Replaced "Try Again" button with **"Close Window"** button, as the token becomes invalid after closing the connection dialog on PC.
+- **Logo**: Replaced generic icon with custom V-Link branding (PNG) embedded directly.
+- **Theme**: Updated background gradient to a deeper, more premium purple (`#170F30` -> `#0B1020`).
+- **Access Denied**: Updated error pages to match the new branding.
 
-**Full Changelog**: https://github.com/Volfheim/V-Link/compare/v2.1.1...v2.1.2
+**Full Changelog**: https://github.com/Volfheim/V-Link/compare/v2.1.2...v2.1.3
 """
 
 headers = {
@@ -48,52 +50,44 @@ try:
     del_url = existing['url']
     req_del = urllib.request.Request(del_url, method="DELETE", headers=headers)
     with urllib.request.urlopen(req_del):
-        print("Old release deleted.")
+        print("Deleted existing release.")
 except urllib.error.HTTPError as e:
     if e.code != 404:
-        print(f"Error checking release: {e.code}")
-        sys.exit(1)
+        raise
 
-# 2. Create Release
+# 2. CRUD Release
 print(f"Creating release {TAG}...")
-payload = json.dumps({
-    "tag_name": TAG, 
-    "name": f"V-Link {TAG}", 
-    "body": BODY.strip(), 
-    "draft": False, 
+data = {
+    "tag_name": TAG,
+    "target_commitish": "main",
+    "name": TAG,
+    "body": BODY,
+    "draft": False,
     "prerelease": False
-}).encode()
-
-req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/releases", data=payload, headers=headers, method="POST")
-try:
-    with urllib.request.urlopen(req) as f:
-        release = json.loads(f.read().decode())
-    print(f"Release created: {release['html_url']}")
-    upload_url = release["upload_url"].split("{")[0]
-except urllib.error.HTTPError as e:
-    print(f"Error creating release: {e.code} {e.read().decode()}")
-    sys.exit(1)
-
-# 3. Upload EXE
-fname = os.path.basename(EXE)
-print(f"Uploading {fname}...")
-with open(EXE, "rb") as f:
-    data = f.read()
-
-up_headers = {
-    "Authorization": f"token {TOKEN}",
-    "Accept": "application/vnd.github+json",
-    "Content-Type": "application/octet-stream",
 }
-up_url = f"{upload_url}?name={fname}"
-req2 = urllib.request.Request(up_url, data=data, headers=up_headers, method="POST")
 
-try:
-    with urllib.request.urlopen(req2) as f:
-        asset = json.loads(f.read().decode())
-    print(f"Asset uploaded: {asset['name']} ({asset['size']//1024} KB)")
-except urllib.error.HTTPError as e:
-    print(f"Error uploading asset: {e.code} {e.read().decode()}")
-    sys.exit(1)
+req = urllib.request.Request(f"https://api.github.com/repos/{REPO}/releases",
+                             data=json.dumps(data).encode('utf-8'),
+                             headers=headers, method="POST")
+with urllib.request.urlopen(req) as f:
+    release = json.load(f)
+    upload_url_template = release['upload_url']
+
+print(f"Release created: {release['html_url']}")
+
+# 3. Upload Asset
+upload_url = upload_url_template.replace("{?name,label}", f"?name={os.path.basename(EXE)}")
+print(f"Uploading {EXE}...")
+
+with open(EXE, 'rb') as f:
+    file_data = f.read()
+
+req_up = urllib.request.Request(upload_url, data=file_data, headers={
+    **headers,
+    "Content-Type": "application/vnd.microsoft.portable-executable"
+}, method="POST")
+
+with urllib.request.urlopen(req_up) as f:
+    print("Asset uploaded successfully.")
 
 print("Done!")
