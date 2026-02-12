@@ -197,8 +197,8 @@ class TransferServer:
             </svg>
         </div>
         <h2>Доступ закрыт</h2>
-        <p>Для передачи файлов откройте окно <b>«Мобильник»</b> в приложении V-Link на компьютере.</p>
-        <button class="btn" onclick="location.reload()">Попробовать снова</button>
+        <p>Для передачи файлов откройте окно <b>«Мобильник»</b> в приложении V-Link на компьютере. Текущий токен устарел.</p>
+        <button class="btn" onclick="window.close()">Закрыть окно</button>
     </div>
 </body>
 </html>"""

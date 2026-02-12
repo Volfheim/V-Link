@@ -1,7 +1,7 @@
 """Create GitHub Release for V-Link v2.0.1 and upload EXE."""
 import json, os, sys, urllib.request, urllib.error, mimetypes
 
-TAG = "v2.1.1"
+TAG = "v2.1.2"
 REPO = "Volfheim/V-Link"
 EXE = r"E:\Gravity\V-Link\dist\V-Link.exe"
 TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
@@ -21,14 +21,14 @@ if not TOKEN:
 if not TOKEN:
     sys.exit("No GitHub token found")
 
-BODY = r"""## 💄 UI Polish (v2.1.1)
+BODY = r"""## 💄 Feedback Polish (v2.1.2)
 
-Small visual update for better user experience.
+UX Improvement based on feedback.
 
 ### ✨ Changes
-- **Access Denied Page**: The "403 Forbidden" error page (seen when accessing without a token) is now fully styled with dark mode and responsive design, matching the rest of the app.
+- **Access Denied Page**: Replaced "Try Again" button with **"Close Window"** button, as the token becomes invalid after closing the connection dialog on PC.
 
-**Full Changelog**: https://github.com/Volfheim/V-Link/compare/v2.1.0...v2.1.1
+**Full Changelog**: https://github.com/Volfheim/V-Link/compare/v2.1.1...v2.1.2
 """
 
 headers = {
