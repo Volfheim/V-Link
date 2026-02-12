@@ -1,282 +1,510 @@
-﻿<!doctype html>
+﻿<!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>V-Link Mobile</title>
-  <style>
-    :root {
-      --bg: #0f172a;
-      --card: #111827;
-      --border: #334155;
-      --accent: #22c55e;
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --danger: #ef4444;
-    }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", Tahoma, sans-serif;
-      background: radial-gradient(circle at 20% 0%, #1e293b 0%, var(--bg) 55%);
-      color: var(--text);
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      padding: 16px;
-      box-sizing: border-box;
-    }
-    .wrap {
-      width: 100%;
-      max-width: 760px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-    .card {
-      background: rgba(17, 24, 39, 0.85);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 14px;
-      backdrop-filter: blur(6px);
-    }
-    h1, h2 {
-      margin: 0 0 8px 0;
-      font-weight: 700;
-    }
-    h1 { font-size: 20px; }
-    h2 { font-size: 16px; color: #cbd5e1; }
-    p { margin: 0; color: var(--muted); }
-    .row {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
-    button {
-      border: none;
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-weight: 600;
-      color: white;
-      background: linear-gradient(90deg, #16a34a, #22c55e);
-      cursor: pointer;
-    }
-    button.secondary {
-      background: #334155;
-    }
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-    input[type="file"] {
-      width: 100%;
-      color: var(--text);
-      background: #0b1220;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px;
-      box-sizing: border-box;
-    }
-    .status {
-      min-height: 20px;
-      color: var(--muted);
-      font-size: 13px;
-      margin-top: 6px;
-    }
-    .status.err { color: var(--danger); }
-    .status.ok { color: var(--accent); }
-    .files {
-      display: grid;
-      gap: 8px;
-    }
-    .file {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-      background: rgba(15, 23, 42, 0.65);
-    }
-    .file .meta {
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-    .name {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 420px;
-      font-weight: 600;
-    }
-    .small {
-      color: var(--muted);
-      font-size: 12px;
-    }
-    a.download {
-      text-decoration: none;
-      color: white;
-      background: #3b82f6;
-      border-radius: 7px;
-      padding: 8px 10px;
-      font-size: 13px;
-      white-space: nowrap;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#0f172a">
+    <title>V-Link Mobile</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --text: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: rgba(255, 255, 255, 0.08);
+            --danger: #ef4444;
+            --success: #22c55e;
+            --radius: 16px;
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            padding-bottom: 30px; /* Safe area for bottom bar */
+        }
+
+        /* --- Header --- */
+        .header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .brand {
+            font-weight: 700;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .brand svg { width: 24px; height: 24px; color: var(--primary); }
+
+        .status-badge {
+            font-size: 12px;
+            padding: 4px 10px;
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--success);
+            border-radius: 99px;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            font-weight: 600;
+        }
+
+        /* --- Container --- */
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        /* --- Upload Zone --- */
+        .upload-card {
+            background: var(--surface);
+            border-radius: var(--radius);
+            padding: 24px;
+            text-align: center;
+            border: 2px dashed rgba(99, 102, 241, 0.3);
+            transition: all 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-card:active { transform: scale(0.98); background: rgba(99, 102, 241, 0.05); }
+
+        .upload-icon {
+            width: 64px;
+            height: 64px;
+            background: rgba(99, 102, 241, 0.15);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+            color: var(--primary);
+        }
+
+        .upload-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .upload-desc {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--primary);
+            color: white;
+            font-weight: 600;
+            padding: 12px 24px;
+            border-radius: 12px;
+            border: none;
+            font-size: 16px;
+            width: 100%;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+            transition: background 0.2s;
+        }
+        
+        .btn:active { background: var(--primary-dark); }
+        .btn svg { margin-right: 8px; }
+
+        #fileInput {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        /* --- Files List --- */
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .refresh-btn {
+            background: transparent;
+            border: none;
+            color: var(--primary);
+            padding: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .refresh-btn:active { background: rgba(99, 102, 241, 0.1); }
+
+        .file-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .file-card {
+            background: var(--surface);
+            border-radius: 16px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            border: 1px solid var(--border);
+            text-decoration: none;
+            color: inherit;
+            transition: transform 0.1s;
+        }
+        
+        .file-card:active { transform: scale(0.98); background: #263345; }
+
+        .file-icon {
+            width: 48px;
+            height: 48px;
+            background: #273548;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            flex-shrink: 0;
+        }
+
+        .file-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-name {
+            font-weight: 600;
+            font-size: 15px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 4px;
+        }
+
+        .file-meta {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .download-icon {
+            color: var(--primary);
+            padding: 8px;
+            background: rgba(99, 102, 241, 0.1);
+            border-radius: 50%;
+        }
+
+        /* --- Toast & Progress --- */
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 1000;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: rgba(30, 41, 59, 0.95);
+            backdrop-filter: blur(10px);
+            color: white;
+            padding: 14px 18px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+            animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        .toast.error { border-left: 4px solid var(--danger); }
+        .toast.success { border-left: 4px solid var(--success); }
+
+        @keyframes slideUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        /* Progress Bar */
+        .progress-bar-wrap {
+            position: fixed;
+            bottom: 0; left: 0; width: 100%;
+            height: 4px;
+            background: transparent;
+            z-index: 200;
+        }
+        .progress-bar {
+            height: 100%;
+            background: var(--success);
+            width: 0%;
+            transition: width 0.2s;
+            box-shadow: 0 0 10px var(--success);
+        }
+
+        /* Utilities */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+        }
+    </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>V-Link Mobile</h1>
-      <p>Передача файлов между телефоном и ПК в локальной сети.</p>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="brand">
+            <!-- Logo Icon -->
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+            V-Link
+        </div>
+        <div class="status-badge">Онлайн</div>
+    </header>
+
+    <div class="container">
+        
+        <!-- Upload Card -->
+        <div class="upload-card">
+            <div class="upload-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+            </div>
+            <div class="upload-title">Отправить файлы</div>
+            <div class="upload-desc">Нажмите для выбора фото или документов</div>
+            <button class="btn">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Выбрать файлы
+            </button>
+            <input type="file" id="fileInput" multiple>
+        </div>
+
+        <!-- Files List -->
+        <div>
+            <div class="section-header">
+                <div class="section-title">Файлы на ПК</div>
+                <button class="refresh-btn" id="refreshBtn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                </button>
+            </div>
+            <div id="fileList" class="file-list">
+                <!-- JS will populate this -->
+                <div class="empty-state">Загрузка списка...</div>
+            </div>
+        </div>
+
     </div>
 
-    <div class="card">
-      <h2>Загрузка на ПК</h2>
-      <input id="uploadInput" type="file" multiple>
-      <div class="row" style="margin-top:10px">
-        <button id="uploadBtn">Загрузить</button>
-      </div>
-      <div id="uploadStatus" class="status"></div>
+    <!-- Progress Bar -->
+    <div class="progress-bar-wrap">
+        <div id="progressBar" class="progress-bar"></div>
     </div>
 
-    <div class="card">
-      <div class="row" style="justify-content:space-between">
-        <h2>Файлы на ПК</h2>
-        <button id="refreshBtn" class="secondary">Обновить</button>
-      </div>
-      <div id="listStatus" class="status"></div>
-      <div id="files" class="files"></div>
-    </div>
-  </div>
+    <!-- Toasts -->
+    <div id="toastContainer" class="toast-container"></div>
 
-  <script>
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("token") || "";
-    const uploadInput = document.getElementById("uploadInput");
-    const uploadBtn = document.getElementById("uploadBtn");
-    const refreshBtn = document.getElementById("refreshBtn");
-    const uploadStatus = document.getElementById("uploadStatus");
-    const listStatus = document.getElementById("listStatus");
-    const filesRoot = document.getElementById("files");
+    <script>
+        // --- Core ---
+        const params = new URLSearchParams(window.location.search);
+        const TOKEN = params.get("token") || "";
+        
+        const dom = {
+            fileInput: document.getElementById('fileInput'),
+            fileList: document.getElementById('fileList'),
+            refreshBtn: document.getElementById('refreshBtn'),
+            progressBar: document.getElementById('progressBar'),
+            toastContainer: document.getElementById('toastContainer')
+        };
 
-    function humanSize(bytes) {
-      const units = ["B", "KB", "MB", "GB"];
-      let i = 0;
-      let v = Number(bytes || 0);
-      while (v >= 1024 && i < units.length - 1) {
-        v /= 1024;
-        i += 1;
-      }
-      return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-    }
-
-    function setStatus(node, text, kind) {
-      node.className = `status${kind ? " " + kind : ""}`;
-      node.textContent = text || "";
-    }
-
-    function ensureToken() {
-      if (!token) {
-        setStatus(uploadStatus, "Отсутствует token доступа.", "err");
-        setStatus(listStatus, "Откройте URL из приложения V-Link.", "err");
-        uploadBtn.disabled = true;
-        refreshBtn.disabled = true;
-        return false;
-      }
-      return true;
-    }
-
-    async function refreshFiles() {
-      if (!ensureToken()) return;
-      setStatus(listStatus, "Обновление списка...", "");
-      try {
-        const r = await fetch(`/api/mobile/files?token=${encodeURIComponent(token)}`);
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const data = await r.json();
-        if (data.status !== "ok") throw new Error(data.message || "Ошибка сервера");
-
-        filesRoot.innerHTML = "";
-        const files = Array.isArray(data.files) ? data.files : [];
-        if (!files.length) {
-          setStatus(listStatus, "Файлы пока не найдены.", "");
-          return;
+        // --- Utils ---
+        function humanSize(bytes) {
+            const units = ['B', 'KB', 'MB', 'GB'];
+            let size = bytes;
+            let i = 0;
+            while(size >= 1024 && i < units.length - 1) {
+                size /= 1024;
+                i++;
+            }
+            return `${size.toFixed(1)} ${units[i]}`;
         }
-        setStatus(listStatus, `Найдено: ${files.length}`, "ok");
 
-        for (const file of files) {
-          const row = document.createElement("div");
-          row.className = "file";
-
-          const meta = document.createElement("div");
-          meta.className = "meta";
-
-          const name = document.createElement("div");
-          name.className = "name";
-          name.textContent = file.name || "unknown";
-
-          const info = document.createElement("div");
-          info.className = "small";
-          info.textContent = `${humanSize(file.size)} · ${new Date((file.mtime || 0) * 1000).toLocaleString()}`;
-
-          meta.appendChild(name);
-          meta.appendChild(info);
-
-          const link = document.createElement("a");
-          link.className = "download";
-          link.href = `/api/mobile/download/${encodeURIComponent(file.name)}?token=${encodeURIComponent(token)}`;
-          link.textContent = "Скачать";
-          link.download = file.name || "";
-
-          row.appendChild(meta);
-          row.appendChild(link);
-          filesRoot.appendChild(row);
+        function showToast(msg, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = msg;
+            dom.toastContainer.appendChild(toast);
+            
+            // Remove after 3s
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(20px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
         }
-      } catch (e) {
-        setStatus(listStatus, `Ошибка: ${e.message || e}`, "err");
-      }
-    }
 
-    async function uploadFiles() {
-      if (!ensureToken()) return;
-      const files = uploadInput.files;
-      if (!files || !files.length) {
-        setStatus(uploadStatus, "Сначала выберите файлы.", "err");
-        return;
-      }
-      const form = new FormData();
-      for (const f of files) {
-        form.append("file", f, f.name);
-      }
-
-      uploadBtn.disabled = true;
-      setStatus(uploadStatus, "Загрузка...", "");
-      try {
-        const r = await fetch(`/api/mobile/upload?token=${encodeURIComponent(token)}`, {
-          method: "POST",
-          body: form
-        });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok || data.status !== "ok") {
-          throw new Error(data.message || `HTTP ${r.status}`);
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            // Default File Icon
+            let path = '<path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline>';
+            
+            if (['jpg','jpeg','png','gif','webp'].includes(ext)) {
+                // Image Icon
+                path = '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>';
+            } else if (['mp4','mov','avi','mkv'].includes(ext)) {
+                // Video Icon
+                path = '<rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line>';
+            } else if (['mp3','wav','ogg'].includes(ext)) {
+                // Music Icon
+                path = '<path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>';
+            }
+            
+            return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
         }
-        const count = Array.isArray(data.files) ? data.files.length : 0;
-        setStatus(uploadStatus, `Загружено файлов: ${count}`, "ok");
-        uploadInput.value = "";
-        await refreshFiles();
-      } catch (e) {
-        setStatus(uploadStatus, `Ошибка: ${e.message || e}`, "err");
-      } finally {
-        uploadBtn.disabled = false;
-      }
-    }
 
-    uploadBtn.addEventListener("click", uploadFiles);
-    refreshBtn.addEventListener("click", refreshFiles);
-    refreshFiles();
-  </script>
+        // --- API ---
+        async function fetchFiles() {
+            if (!TOKEN) return;
+            try {
+                const res = await fetch(`/api/mobile/files?token=${encodeURIComponent(TOKEN)}`);
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    renderFiles(data.files);
+                }
+            } catch (e) {
+                console.error("Fetch error", e);
+            }
+        }
+
+        function renderFiles(files) {
+            if (!files || files.length === 0) {
+                dom.fileList.innerHTML = '<div class="empty-state">Папка загрузок пуста</div>';
+                return;
+            }
+
+            dom.fileList.innerHTML = files.map(f => `
+                <a href="/api/mobile/download/${encodeURIComponent(f.name)}?token=${encodeURIComponent(TOKEN)}" class="file-card" download>
+                    <div class="file-icon">
+                        ${getFileIcon(f.name)}
+                    </div>
+                    <div class="file-info">
+                        <div class="file-name">${f.name}</div>
+                        <div class="file-meta">${humanSize(f.size)} • ${new Date(f.mtime * 1000).toLocaleDateString()}</div>
+                    </div>
+                    <div class="download-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                    </div>
+                </a>
+            `).join('');
+        }
+
+        async function uploadFiles(e) {
+            const files = e.target.files;
+            if (!files.length) return;
+
+            const formData = new FormData();
+            for (let i = 0; i < files.length; i++) {
+                formData.append('file', files[i]);
+            }
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `/api/mobile/upload?token=${encodeURIComponent(TOKEN)}`, true);
+
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    const percent = (e.loaded / e.total) * 100;
+                    dom.progressBar.style.width = percent + '%';
+                }
+            };
+
+            xhr.onload = () => {
+                dom.progressBar.style.width = '0%';
+                if (xhr.status === 200) {
+                    showToast('Файлы успешно отправлены', 'success');
+                    fetchFiles();
+                } else {
+                    showToast('Ошибка загрузки', 'error');
+                }
+                dom.fileInput.value = ''; // Reset input
+            };
+
+            xhr.onerror = () => {
+                showToast('Ошибка сети', 'error');
+                dom.progressBar.style.width = '0%';
+            };
+
+            xhr.send(formData);
+        }
+
+        // --- Init ---
+        if (!TOKEN) {
+            document.body.innerHTML = `
+                <div class="container" style="text-align:center; padding-top:100px;">
+                    <h2>Ошибка доступа</h2>
+                    <p>Отсканируйте QR-код заново в приложении V-Link.</p>
+                </div>
+            `;
+        } else {
+            dom.fileInput.addEventListener('change', uploadFiles);
+            dom.refreshBtn.addEventListener('click', () => {
+                dom.refreshBtn.style.transform = 'rotate(360deg)';
+                setTimeout(() => dom.refreshBtn.style.transform = 'none', 500);
+                fetchFiles();
+            });
+
+            // Initial load
+            fetchFiles();
+            
+            // Auto-refresh every 5s
+            setInterval(fetchFiles, 5000);
+        }
+    </script>
 </body>
 </html>
