@@ -127,6 +127,82 @@ class TransferServer:
             return ""
         return base
 
+    def _get_forbidden_html(self) -> str:
+        return """<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0f172a">
+    <title>Доступ ограничен</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .card {
+            background: #1e293b;
+            padding: 32px 24px;
+            border-radius: 24px;
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .icon {
+            width: 64px;
+            height: 64px;
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+        }
+        h2 { margin: 0 0 12px; font-size: 20px; font-weight: 700; }
+        p { margin: 0 0 24px; color: #94a3b8; line-height: 1.5; font-size: 15px; }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            background: #334155;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.2s;
+        }
+        .btn:active { background: #475569; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+        </div>
+        <h2>Доступ закрыт</h2>
+        <p>Для передачи файлов откройте окно <b>«Мобильник»</b> в приложении V-Link на компьютере.</p>
+        <button class="btn" onclick="location.reload()">Попробовать снова</button>
+    </div>
+</body>
+</html>"""
+
     def _load_mobile_html(self) -> str:
         if self._mobile_template_cache:
             return self._mobile_template_cache
@@ -155,12 +231,7 @@ class TransferServer:
         token = self._extract_mobile_token(request)
         if not self._mobile_token_valid(token):
             return web.Response(
-                text=(
-                    "<!doctype html><html><body>"
-                    "<h3>V-Link Mobile</h3>"
-                    "<p>Доступ закрыт. Откройте окно подключения телефона в приложении V-Link.</p>"
-                    "</body></html>"
-                ),
+                text=self._get_forbidden_html(),
                 content_type="text/html",
                 status=403,
             )

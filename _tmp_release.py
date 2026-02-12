@@ -1,7 +1,7 @@
 """Create GitHub Release for V-Link v2.0.1 and upload EXE."""
 import json, os, sys, urllib.request, urllib.error, mimetypes
 
-TAG = "v2.1.0"
+TAG = "v2.1.1"
 REPO = "Volfheim/V-Link"
 EXE = r"E:\Gravity\V-Link\dist\V-Link.exe"
 TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
@@ -21,20 +21,14 @@ if not TOKEN:
 if not TOKEN:
     sys.exit("No GitHub token found")
 
-BODY = r"""## 📱 Mobile Web Revolution (v2.1.0)
+BODY = r"""## 💄 UI Polish (v2.1.1)
 
-Полностью новый мобильный интерфейс для передачи файлов!
+Small visual update for better user experience.
 
-### ✨ Что нового?
-- **Dark Mode**: Стильный темный дизайн.
-- **Интерактивность**:
-    - Прогресс-бар загрузки (реальное отображение %).
-    - Всплывающие уведомления (Toast).
-    - Автообновление списка файлов.
-- **Удобство**: Крупные кнопки для тач-экранов, анимации.
-- **Язык**: Интерфейс полностью на русском.
+### ✨ Changes
+- **Access Denied Page**: The "403 Forbidden" error page (seen when accessing without a token) is now fully styled with dark mode and responsive design, matching the rest of the app.
 
-**Full Changelog**: https://github.com/Volfheim/V-Link/compare/v2.0.2...v2.1.0
+**Full Changelog**: https://github.com/Volfheim/V-Link/compare/v2.1.0...v2.1.1
 """
 
 headers = {
