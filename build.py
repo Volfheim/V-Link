@@ -54,6 +54,8 @@ def build():
         "app_icon.ico;.",
         "--add-data",
         "src/ui/web_interface.html;ui",
+        "--add-data",
+        "resources/logo.png;resources",
         "--hidden-import",
         "qrcode",
         "--hidden-import",
