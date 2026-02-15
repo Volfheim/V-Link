@@ -2,6 +2,22 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [2.2.0] - 2026-02-15
+### 🌍 Localization (i18n)
+* **Full Support**: Added complete English and Russian localization for Desktop UI and Web Interface.
+* **Smart Detection**: Defaults to system language ("System"), with manual override in Settings.
+* **Web Interface**: Mobile web UI now adapts to the application language (RU/EN).
+* **Restart Prompt**: User is prompted to restart the app when changing language settings.
+
+### 📡 Network & Connectivity
+* **VPN/Multi-net Fixes**: Improved discovery logic to prioritize physical LAN/Wi-Fi interfaces over VPN/Virtual adapters.
+* **Auto-Compatibility**: Automatically enables compatibility mode if complex network environments (VPN, Hotspot, Multiple subnets) are detected.
+
+### 🛠 Technical & Cleanup
+
+* **Build Optimization**: Build process no longer generates versioned filenames (just `V-Link.exe`), preventing clutter.
+* **Refactoring**: Introduced `i18n` core module and localized JSON resources.
+
 ## [2.1.2] - 2026-02-12
 ### 💄 UI Polish
 *   **Access Denied Action**: Кнопка "Попробовать снова" заменена на "Закрыть окно", так как для доступа всегда требуется новый токен.

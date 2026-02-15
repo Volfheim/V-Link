@@ -7,15 +7,11 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-import shutil
 
 
 def build():
     root = Path(__file__).resolve().parent
     dist_dir = root / "dist"
-
-    sys.path.insert(0, str(root / "src"))
-    from version import __version__
 
     try:
         import PyInstaller  # noqa: F401
@@ -56,6 +52,10 @@ def build():
         "src/ui/web_interface.html;ui",
         "--add-data",
         "resources/logo.png;resources",
+        "--add-data",
+        "resources/locales/ru.json;resources/locales",
+        "--add-data",
+        "resources/locales/en.json;resources/locales",
         "--hidden-import",
         "qrcode",
         "--hidden-import",
@@ -72,14 +72,13 @@ def build():
     subprocess.run(cmd, check=True)
 
     exe_path = dist_dir / f"{output_name}.exe"
-    versioned_copy = dist_dir / f"V-Link-{__version__}.exe"
     if exe_path.exists():
-        try:
-            shutil.copy2(exe_path, versioned_copy)
-        except Exception:
-            pass
+        for stale in dist_dir.glob("V-Link-*.exe"):
+            try:
+                stale.unlink()
+            except Exception:
+                pass
         print(f"\nBuild complete: {exe_path}")
-        print(f"Release copy: {versioned_copy}")
         print(f"Size: {exe_path.stat().st_size // 1024} KB")
     else:
         raise FileNotFoundError(f"Expected output not found: {exe_path}")

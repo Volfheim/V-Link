@@ -25,6 +25,7 @@ DEFAULT_SETTINGS = {
     'close_to_tray': True,
     'show_notifications': True,
     'theme': 'dark',
+    'language': 'system',
     'auto_check_updates': True,
     'last_update_check': '',
     'skipped_version': '',
@@ -73,7 +74,7 @@ class Settings:
         self._save()
 
     def set_many(self, values: Dict[str, Any]):
-        """Update multiple settings with a single save operation."""
+        """Обновить несколько настроек за одно сохранение."""
         if not values:
             return
         self.settings.update(values)
@@ -107,6 +108,13 @@ class Settings:
     @property
     def autostart(self) -> bool:
         return bool(self.get('autostart', False))
+
+    @property
+    def language(self) -> str:
+        value = str(self.get('language', 'system') or 'system').strip().lower()
+        if value in ('system', 'ru', 'en'):
+            return value
+        return 'system'
 
     @property
     def nonstandard_network_mode(self) -> bool:

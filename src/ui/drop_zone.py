@@ -6,6 +6,7 @@ V-Link - Drop Zone Widget
 from PyQt6.QtWidgets import QFrame, QVBoxLayout, QLabel, QFileDialog
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QMouseEvent
+from core.i18n import t
 
 
 class DropZone(QFrame):
@@ -35,7 +36,7 @@ class DropZone(QFrame):
         layout.addWidget(self.icon_label)
         
         # Основной текст
-        self.main_label = QLabel("Перетащите файлы сюда")
+        self.main_label = QLabel(t("Перетащите файлы сюда"))
         self.main_label.setStyleSheet("""
             font-size: 16px;
             font-weight: bold;
@@ -45,7 +46,7 @@ class DropZone(QFrame):
         layout.addWidget(self.main_label)
         
         # Подсказка
-        self.hint_label = QLabel("или нажмите для выбора")
+        self.hint_label = QLabel(t("или нажмите для выбора"))
         self.hint_label.setStyleSheet("""
             font-size: 13px;
             color: #94a3b8;
@@ -61,7 +62,7 @@ class DropZone(QFrame):
             self.style().unpolish(self)
             self.style().polish(self)
             self.icon_label.setText("[ >>> ]")
-            self.main_label.setText("Отпустите для добавления")
+            self.main_label.setText(t("Отпустите для добавления"))
     
     def dragLeaveEvent(self, event):
         """Файл покидает зону"""
@@ -69,7 +70,7 @@ class DropZone(QFrame):
         self.style().unpolish(self)
         self.style().polish(self)
         self.icon_label.setText("[ + ]")
-        self.main_label.setText("Перетащите файлы сюда")
+        self.main_label.setText(t("Перетащите файлы сюда"))
     
     def dropEvent(self, event: QDropEvent):
         """Файлы сброшены"""
@@ -77,7 +78,7 @@ class DropZone(QFrame):
         self.style().unpolish(self)
         self.style().polish(self)
         self.icon_label.setText("[ + ]")
-        self.main_label.setText("Перетащите файлы сюда")
+        self.main_label.setText(t("Перетащите файлы сюда"))
         
         files = []
         for url in event.mimeData().urls():
@@ -93,9 +94,9 @@ class DropZone(QFrame):
         if event.button() == Qt.MouseButton.LeftButton:
             files, _ = QFileDialog.getOpenFileNames(
                 self,
-                "Выберите файлы для передачи",
+                t("Выберите файлы для передачи"),
                 "",
-                "Все файлы (*.*)"
+                t("Все файлы (*.*)")
             )
             if files:
                 self.files_dropped.emit(files)

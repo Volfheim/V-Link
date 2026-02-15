@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
 )
+from core.i18n import t
 
 _QR_IMPORT_ERROR = ""
 try:
@@ -33,7 +34,7 @@ class MobileConnectDialog(QDialog):
         self._url = (url or "").strip()
         self._token = (token or "").strip()
 
-        self.setWindowTitle("Подключение телефона")
+        self.setWindowTitle(t("Подключение телефона"))
         self.setMinimumSize(460, 520)
         self.resize(520, 560)
         self.setModal(False)
@@ -78,14 +79,16 @@ class MobileConnectDialog(QDialog):
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(12)
 
-        title = QLabel("Откройте на телефоне")
+        title = QLabel(t("Откройте на телефоне"))
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         root.addWidget(title)
 
         subtitle = QLabel(
-            "1. Подключите телефон к той же Wi-Fi сети.\n"
-            "2. Отсканируйте QR-код или откройте ссылку вручную.\n"
-            "3. Передавайте файлы через браузер."
+            t(
+                "1. Подключите телефон к той же Wi-Fi сети.\n"
+                "2. Отсканируйте QR-код или откройте ссылку вручную.\n"
+                "3. Передавайте файлы через браузер."
+            )
         )
         subtitle.setWordWrap(True)
         subtitle.setStyleSheet("color: #cbd5e1;")
@@ -104,20 +107,20 @@ class MobileConnectDialog(QDialog):
         self.url_edit.setCursorPosition(0)
         root.addWidget(self.url_edit)
 
-        token_label = QLabel(f"Токен сессии: {self._token}")
+        token_label = QLabel(t("Токен сессии: {token}", token=self._token))
         token_label.setStyleSheet("color:#94a3b8; font-size:12px;")
         root.addWidget(token_label)
 
-        hint = QLabel("Ссылка работает, пока это окно открыто.")
+        hint = QLabel(t("Ссылка работает, пока это окно открыто."))
         hint.setStyleSheet("color:#94a3b8; font-size:12px;")
         root.addWidget(hint)
 
         actions = QHBoxLayout()
-        copy_btn = QPushButton("Копировать ссылку")
+        copy_btn = QPushButton(t("Копировать ссылку"))
         copy_btn.clicked.connect(self._copy_url)
         actions.addWidget(copy_btn)
 
-        close_btn = QPushButton("Закрыть")
+        close_btn = QPushButton(t("Закрыть"))
         close_btn.setObjectName("secondary")
         close_btn.clicked.connect(self.close)
         actions.addWidget(close_btn)
@@ -128,16 +131,16 @@ class MobileConnectDialog(QDialog):
 
         cb = QGuiApplication.clipboard()
         cb.setText(self._url)
-        QMessageBox.information(self, "V-Link", "Ссылка скопирована в буфер обмена.")
+        QMessageBox.information(self, "V-Link", t("Ссылка скопирована в буфер обмена."))
 
     def _render_qr(self):
         if not self._url:
-            self.qr_label.setText("URL не задан")
+            self.qr_label.setText(t("URL не задан"))
             return
         if qrcode is None:
             details = f" ({_QR_IMPORT_ERROR})" if _QR_IMPORT_ERROR else ""
             self.qr_label.setText(
-                f"QR-код недоступен: не загружен модуль qrcode{details}"
+                t("QR-код недоступен: не загружен модуль qrcode{details}", details=details)
             )
             return
 
@@ -158,7 +161,7 @@ class MobileConnectDialog(QDialog):
         pix = QPixmap()
         pix.loadFromData(raw, "PNG")
         if pix.isNull():
-            self.qr_label.setText("Не удалось построить QR-код.")
+            self.qr_label.setText(t("Не удалось построить QR-код."))
             return
 
         scaled = pix.scaled(

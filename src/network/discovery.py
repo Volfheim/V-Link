@@ -6,6 +6,7 @@ mDNS/Zeroconf device discovery.
 import asyncio
 import ipaddress
 import json
+import os
 import re
 import socket
 import subprocess
@@ -43,6 +44,22 @@ class _CompatDatagramProtocol(asyncio.DatagramProtocol):
 
 class DeviceDiscovery:
     """Device discovery with registration and pausable browsing."""
+
+    VPN_IFACE_MARKERS = (
+        "vpn",
+        "wireguard",
+        "wintun",
+        "openvpn",
+        "tap-",
+        "tun",
+        "ppp",
+        "hamachi",
+        "zerotier",
+        "tailscale",
+        "nordlynx",
+        "forti",
+        "anyconnect",
+    )
 
     def __init__(self, port: int = 8765, compatibility_mode: bool = False):
         self.port = port
@@ -87,6 +104,89 @@ class DeviceDiscovery:
     def _is_hotspot_environment(self) -> bool:
         return any(self._is_hotspot_ip(ip) for ip in self.get_local_ips())
 
+    @staticmethod
+    def _is_valid_local_ip_static(ip: str) -> bool:
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            return False
+        if addr.is_loopback or addr.is_link_local or addr.is_multicast:
+            return False
+        return True
+
+    @classmethod
+    def _is_vpn_iface_name(cls, iface_name: str) -> bool:
+        probe = str(iface_name or "").lower()
+        return any(marker in probe for marker in cls.VPN_IFACE_MARKERS)
+
+    @classmethod
+    def _windows_interface_ip_pairs(cls, timeout_sec: float = 1.8) -> List[tuple[str, str]]:
+        if os.name != "nt":
+            return []
+
+        pairs: List[tuple[str, str]] = []
+        try:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0
+            proc = subprocess.run(
+                ["ipconfig"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="ignore",
+                startupinfo=startupinfo,
+                creationflags=0x08000000,  # CREATE_NO_WINDOW
+                timeout=timeout_sec,
+                check=False,
+            )
+            output = proc.stdout or ""
+            current_iface = ""
+            for raw in output.splitlines():
+                line = raw.rstrip()
+                if not line:
+                    continue
+                stripped = line.strip()
+                if stripped.endswith(":") and (not raw[:1].isspace()):
+                    current_iface = stripped[:-1]
+                    continue
+                if "IPv4" not in line or ":" not in line:
+                    continue
+                candidate = line.split(":", 1)[1].strip()
+                if candidate:
+                    pairs.append((current_iface, candidate))
+        except Exception:
+            pass
+        return pairs
+
+    @classmethod
+    def detect_vpn_environment(cls) -> bool:
+        for iface_name, ip in cls._windows_interface_ip_pairs():
+            if cls._is_vpn_iface_name(iface_name) and cls._is_valid_local_ip_static(ip):
+                return True
+        return False
+
+    @classmethod
+    def detect_multi_network_environment(cls) -> bool:
+        """
+        Heuristic: if host has >=2 distinct private /24 subnets simultaneously,
+        it's likely multi-homed (e.g. LAN + VPN/TUN). Enable compatibility mode.
+        """
+        subnets: set[str] = set()
+        for _iface_name, ip in cls._windows_interface_ip_pairs():
+            if not cls._is_valid_local_ip_static(ip):
+                continue
+            try:
+                addr = ipaddress.ip_address(ip)
+            except ValueError:
+                continue
+            if not addr.is_private:
+                continue
+            parts = ip.split(".")
+            if len(parts) == 4:
+                subnets.add(f"{parts[0]}.{parts[1]}.{parts[2]}")
+        return len(subnets) >= 2
+
     def _list_local_ipv4(self) -> List[str]:
         ips: set[str] = set()
 
@@ -115,30 +215,8 @@ class DeviceDiscovery:
             pass
 
         # Windows fallback: parse all interface IPv4 (helps when VPN changes route).
-        try:
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = 0
-            proc = subprocess.run(
-                ["ipconfig"],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="ignore",
-                startupinfo=startupinfo,
-                creationflags=0x08000000,  # CREATE_NO_WINDOW
-                timeout=1.8,
-                check=False,
-            )
-            output = proc.stdout or ""
-            for line in output.splitlines():
-                if "IPv4" in line:
-                    if ":" in line:
-                        candidate = line.split(":", 1)[1].strip()
-                        if candidate:
-                            ips.add(candidate)
-        except Exception:
-            pass
+        for _iface_name, candidate in self._windows_interface_ip_pairs(timeout_sec=1.8):
+            ips.add(candidate)
 
         filtered = [ip for ip in ips if self._is_valid_local_ip(ip)]
 

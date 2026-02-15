@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="ru">
+<html lang="{{HTML_LANG}}">
 
 <head>
     <meta charset="UTF-8">
@@ -337,7 +337,7 @@
             <img src="data:image/png;base64,{{LOGO_BASE64}}" style="width: 32px; height: 32px; object-fit: contain;" alt="V-Link">
             V-Link
         </div>
-        <div class="status-badge">Онлайн</div>
+        <div class="status-badge" id="statusBadge">Online</div>
     </header>
 
     <div class="container">
@@ -352,15 +352,15 @@
                     <line x1="12" y1="3" x2="12" y2="15"></line>
                 </svg>
             </div>
-            <div class="upload-title">Отправить файлы</div>
-            <div class="upload-desc">Нажмите для выбора фото или документов</div>
-            <button class="btn">
+            <div class="upload-title" id="uploadTitle">Upload files</div>
+            <div class="upload-desc" id="uploadDesc">Tap to choose files</div>
+            <button class="btn" id="chooseFilesBtn">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                     stroke-linecap="round" stroke-linejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
                     <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
-                Выбрать файлы
+                <span id="chooseFilesText">Choose files</span>
             </button>
             <input type="file" id="fileInput" multiple>
         </div>
@@ -368,7 +368,7 @@
         <!-- Files List -->
         <div>
             <div class="section-header">
-                <div class="section-title">Файлы на ПК</div>
+                <div class="section-title" id="filesOnPcTitle">Files on PC</div>
                 <button class="refresh-btn" id="refreshBtn">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
@@ -380,7 +380,7 @@
             </div>
             <div id="fileList" class="file-list">
                 <!-- JS will populate this -->
-                <div class="empty-state">Загрузка списка...</div>
+                <div class="empty-state" id="listLoadingText">Loading list...</div>
             </div>
         </div>
 
@@ -396,6 +396,8 @@
 
     <script>
         // --- Core ---
+        const I18N = {{I18N_JSON}};
+        const tr = (key, fallback = '') => I18N[key] || fallback || key;
         const params = new URLSearchParams(window.location.search);
         const TOKEN = params.get("token") || "";
 
@@ -406,6 +408,14 @@
             progressBar: document.getElementById('progressBar'),
             toastContainer: document.getElementById('toastContainer')
         };
+
+        // Localize static labels
+        document.getElementById('statusBadge').textContent = tr('online', 'Online');
+        document.getElementById('uploadTitle').textContent = tr('uploadTitle', 'Upload files');
+        document.getElementById('uploadDesc').textContent = tr('uploadDesc', 'Tap to choose files');
+        document.getElementById('chooseFilesText').textContent = tr('chooseFiles', 'Choose files');
+        document.getElementById('filesOnPcTitle').textContent = tr('filesOnPc', 'Files on PC');
+        document.getElementById('listLoadingText').textContent = tr('loadingList', 'Loading list...');
 
         // --- Utils ---
         function humanSize(bytes) {
@@ -468,7 +478,7 @@
 
         function renderFiles(files) {
             if (!files || files.length === 0) {
-                dom.fileList.innerHTML = '<div class="empty-state">Папка загрузок пуста</div>';
+                dom.fileList.innerHTML = `<div class="empty-state">${tr('emptyFolder', 'Downloads folder is empty')}</div>`;
                 return;
             }
 
@@ -514,16 +524,16 @@
             xhr.onload = () => {
                 dom.progressBar.style.width = '0%';
                 if (xhr.status === 200) {
-                    showToast('Файлы успешно отправлены', 'success');
+                    showToast(tr('uploadSuccess', 'Files uploaded successfully'), 'success');
                     fetchFiles();
                 } else {
-                    showToast('Ошибка загрузки', 'error');
+                    showToast(tr('uploadError', 'Upload error'), 'error');
                 }
                 dom.fileInput.value = ''; // Reset input
             };
 
             xhr.onerror = () => {
-                showToast('Ошибка сети', 'error');
+                showToast(tr('networkError', 'Network error'), 'error');
                 dom.progressBar.style.width = '0%';
             };
 
@@ -534,8 +544,8 @@
         if (!TOKEN) {
             document.body.innerHTML = `
                 <div class="container" style="text-align:center; padding-top:100px;">
-                    <h2>Ошибка доступа</h2>
-                    <p>Отсканируйте QR-код заново в приложении V-Link.</p>
+                    <h2>${tr('accessErrorTitle', 'Access error')}</h2>
+                    <p>${tr('accessErrorText', 'Scan QR code again in V-Link app.')}</p>
                 </div>
             `;
         } else {

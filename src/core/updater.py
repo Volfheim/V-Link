@@ -58,9 +58,7 @@ class Updater:
         self.on_update_ready: Optional[Callable] = None       # (path: str)
         self.on_error: Optional[Callable] = None              # (error: str)
 
-    # ------------------------------------------------------------------
-    # Properties
-    # ------------------------------------------------------------------
+
 
     @staticmethod
     def is_frozen() -> bool:
@@ -78,9 +76,7 @@ class Updater:
     def update_body(self) -> str:
         return self._info.body if self._info else ""
 
-    # ------------------------------------------------------------------
-    # Check
-    # ------------------------------------------------------------------
+
 
     def _should_check(self) -> bool:
         if self._just_updated:
@@ -230,9 +226,7 @@ class Updater:
         finally:
             self._checking = False
 
-    # ------------------------------------------------------------------
-    # Download
-    # ------------------------------------------------------------------
+
 
     def _download_target_path(self) -> Path:
         """
@@ -346,9 +340,7 @@ class Updater:
         finally:
             self._downloading = False
 
-    # ------------------------------------------------------------------
-    # Apply
-    # ------------------------------------------------------------------
+
 
     def _check_and_clear_flag(self) -> bool:
         """Check if app has just updated and clear marker."""
@@ -545,9 +537,7 @@ exit /b 0
                 self.on_error(str(e))
             return False
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+
 
     def skip_version(self):
         """Mark the current available update as skipped."""

@@ -17,22 +17,27 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.i18n import i18n, t
+
 
 def plural_devices(count: int) -> str:
+    if i18n.language == "en":
+        unit = t("device") if count == 1 else t("devices")
+        return f"{count} {unit}"
     if count % 100 in (11, 12, 13, 14):
-        return f"{count} устройств"
+        return f"{count} {t('устройств')}"
     if count % 10 == 1:
-        return f"{count} устройство"
+        return f"{count} {t('устройство')}"
     if count % 10 in (2, 3, 4):
-        return f"{count} устройства"
-    return f"{count} устройств"
+        return f"{count} {t('устройства')}"
+    return f"{count} {t('устройств')}"
 
 
 class ManualConnectDialog(QDialog):
     def __init__(self, default_port: int = 8765, parent=None):
         super().__init__(parent)
         self.default_port = default_port
-        self.setWindowTitle("Подключение по IP")
+        self.setWindowTitle(t("Подключение по IP"))
         self.setMinimumWidth(380)
         self.setStyleSheet(
             """
@@ -72,7 +77,7 @@ class ManualConnectDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
 
-        hint = QLabel("Введите IP-адрес или IP:порт устройства:")
+        hint = QLabel(t("Введите IP-адрес или IP:порт устройства:"))
         layout.addWidget(hint)
 
         self.ip_edit = QLineEdit()
@@ -82,12 +87,12 @@ class ManualConnectDialog(QDialog):
         buttons = QHBoxLayout()
         buttons.addStretch()
 
-        cancel_btn = QPushButton("Отмена")
+        cancel_btn = QPushButton(t("Отмена"))
         cancel_btn.setObjectName("cancelBtn")
         cancel_btn.clicked.connect(self.reject)
         buttons.addWidget(cancel_btn)
 
-        connect_btn = QPushButton("Подключить")
+        connect_btn = QPushButton(t("Подключить"))
         connect_btn.clicked.connect(self._connect)
         buttons.addWidget(connect_btn)
 
@@ -116,7 +121,7 @@ class ManualConnectDialog(QDialog):
         try:
             ipaddress.ip_address(self.ip_address)
         except ValueError:
-            self.ip_edit.setToolTip("Некорректный IP-адрес")
+            self.ip_edit.setToolTip(t("Некорректный IP-адрес"))
             self.ip_edit.setStyleSheet(
                 """
                 QLineEdit {
@@ -193,10 +198,10 @@ class DeviceCard(QFrame):
 
         if self._is_relay():
             icon_text = "RLY"
-            tooltip = "Relay-устройство"
+            tooltip = t("Relay-устройство")
         else:
             icon_text = "IP" if self.is_manual else "PC"
-            tooltip = "Ручное подключение" if self.is_manual else "Устройство в сети"
+            tooltip = t("Ручное подключение") if self.is_manual else t("Устройство в сети")
 
         icon = QLabel(icon_text)
         icon.setToolTip(tooltip)
@@ -273,15 +278,15 @@ class DeviceList(QFrame):
         layout.setSpacing(12)
 
         header = QHBoxLayout()
-        title = QLabel("Устройства в сети")
+        title = QLabel(t("Устройства в сети"))
         title.setStyleSheet("font-size: 14px; font-weight: bold; color: #f8fafc;")
         header.addWidget(title)
         header.addStretch()
 
-        self.count_label = QLabel("0 устройств")
+        self.count_label = QLabel(plural_devices(0))
         self.count_label.setStyleSheet("font-size: 12px; color: #94a3b8;")
         add_btn = QPushButton("+ IP")
-        add_btn.setToolTip("Добавить устройство по IP-адресу")
+        add_btn.setToolTip(t("Добавить устройство по IP-адресу"))
         add_btn.setStyleSheet(
             """
             QPushButton {
@@ -300,7 +305,7 @@ class DeviceList(QFrame):
         header.addWidget(add_btn)
 
         self.refresh_btn = QPushButton()
-        self.refresh_btn.setToolTip("Обновить список устройств")
+        self.refresh_btn.setToolTip(t("Обновить список устройств"))
         self.refresh_btn.setFixedSize(28, 28)
         self.refresh_btn.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_BrowserReload))
         self.refresh_btn.setStyleSheet(
@@ -342,7 +347,7 @@ class DeviceList(QFrame):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             ip = dialog.ip_address
             port = dialog.port
-            name = f"Manual ({ip})"
+            name = t("Manual ({ip})", ip=ip)
             self.add_device(name, ip, port, True, is_manual=True)
             self.device_selected.emit(name, ip, port)
 
@@ -407,5 +412,3 @@ class DeviceList(QFrame):
             self._selected_card.device_ip,
             self._selected_card.device_port,
         )
-
-

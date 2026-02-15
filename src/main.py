@@ -65,6 +65,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from qasync import QEventLoop
 
+from core import Settings, i18n, t
 from main_window import MainWindow
 
 
@@ -88,6 +89,8 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("V-Link")
     app.setOrganizationName("Volfheim")
+    settings = Settings()
+    i18n.load(settings.language)
 
     # Prefer executable icon in frozen mode (best taskbar compatibility on Windows).
     app_icon = QIcon()
@@ -114,7 +117,7 @@ def main():
         QMessageBox.information(
             None,
             "V-Link",
-            "V-Link уже запущен.\nПроверьте окно приложения или иконку в системном трее.",
+            t("V-Link уже запущен.\nПроверьте окно приложения или иконку в системном трее."),
         )
         return 0
     app._instance_lock = instance_lock
@@ -122,7 +125,7 @@ def main():
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)
 
-    window = MainWindow()
+    window = MainWindow(settings=settings)
     if _show_after_update:
         window.show()
     elif window.settings.start_minimized:
@@ -150,7 +153,7 @@ def main():
                 window.hide()
                 await window.enter_low_power_mode()
             else:
-                # Ensure normal visible launch when "start minimized" is disabled.
+                # Обычный запуск
                 window.setWindowState(
                     (window.windowState() & ~Qt.WindowState.WindowMinimized)
                     | Qt.WindowState.WindowActive
@@ -167,16 +170,18 @@ def main():
             except Exception:
                 pass
             message = (
-                "Сетевые сервисы не удалось запустить.\n\n"
-                f"Причина: {e}\n\n"
-                "Приложение останется открытым: проверьте настройки порта и повторите запуск сервисов "
-                "через перезапуск программы."
+                t(
+                    "Сетевые сервисы не удалось запустить.\n\nПричина: {error}\n\n"
+                    "Приложение останется открытым: проверьте настройки порта и повторите запуск сервисов "
+                    "через перезапуск программы.",
+                    error=e,
+                )
             )
             QMessageBox.warning(None, "V-Link", message)
             window.show()
             window.raise_()
             window.activateWindow()
-            window.show_startup_state("● Ошибка запуска сервисов (нужен перезапуск)")
+            window.show_startup_state(t("● Ошибка запуска сервисов (нужен перезапуск)"))
             try:
                 window.status_label.setStyleSheet("color: #ef4444; font-size: 12px;")
             except Exception:

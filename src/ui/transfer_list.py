@@ -19,6 +19,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.i18n import t
+
 
 class TransferItem(QFrame):
     cancel_requested = pyqtSignal(str)
@@ -94,7 +96,7 @@ class TransferItem(QFrame):
 
         bottom_row = QHBoxLayout()
 
-        self.time_label = QLabel("0 сек")
+        self.time_label = QLabel(t("0 сек"))
         self.time_label.setStyleSheet("color: #64748b; font-size: 10px;")
         bottom_row.addWidget(self.time_label)
         bottom_row.addStretch()
@@ -105,7 +107,7 @@ class TransferItem(QFrame):
         bottom_row.addWidget(self.status_label)
 
         self.open_btn = QPushButton()
-        self.open_btn.setToolTip("Показать в проводнике")
+        self.open_btn.setToolTip(t("Показать в проводнике"))
         self.open_btn.setFixedSize(24, 24)
         style = self.open_btn.style()
         self.open_btn.setIcon(style.standardIcon(style.StandardPixmap.SP_DirOpenIcon))
@@ -157,7 +159,7 @@ class TransferItem(QFrame):
         self.timer.stop()
         self.end_time = time.perf_counter()
         self.state = "error"
-        self.status_label.setText("Ошибка")
+        self.status_label.setText(t("Ошибка"))
         self.status_label.setStyleSheet("color: #ef4444; font-size: 11px; font-weight: bold;")
         self.setToolTip(error)
 
@@ -195,16 +197,16 @@ class TransferItem(QFrame):
     @staticmethod
     def _format_time(seconds: float) -> str:
         if seconds < 1:
-            return "<1 сек"
+            return t("<1 сек")
         if seconds < 60:
-            return f"{int(round(seconds))} сек"
+            return t("{seconds} сек", seconds=int(round(seconds)))
         if seconds < 3600:
             mins = int(seconds // 60)
             secs = int(seconds % 60)
-            return f"{mins} мин {secs} сек"
+            return t("{mins} мин {secs} сек", mins=mins, secs=secs)
         hours = int(seconds // 3600)
         mins = int((seconds % 3600) // 60)
-        return f"{hours} ч {mins} мин"
+        return t("{hours} ч {mins} мин", hours=hours, mins=mins)
 
 
 class TransferList(QFrame):
@@ -220,11 +222,11 @@ class TransferList(QFrame):
         layout.setSpacing(12)
 
         header = QHBoxLayout()
-        title = QLabel("Передачи")
+        title = QLabel(t("Передачи"))
         title.setStyleSheet("font-size: 14px; font-weight: bold; color: #f8fafc;")
         header.addWidget(title)
 
-        self.count_label = QLabel("Нет активных")
+        self.count_label = QLabel(t("Нет активных"))
         self.count_label.setStyleSheet("font-size: 12px; color: #94a3b8;")
         header.addStretch()
         header.addWidget(self.count_label)
@@ -276,9 +278,9 @@ class TransferList(QFrame):
     def _update_count(self):
         active = sum(1 for t in self.transfers.values() if t.state == "in_progress")
         if active == 0:
-            self.count_label.setText("Нет активных")
+            self.count_label.setText(t("Нет активных"))
         else:
-            self.count_label.setText(f"{active} активных")
+            self.count_label.setText(t("{count} активных", count=active))
 
     def set_low_power_mode(self, enabled: bool):
         for transfer in self.transfers.values():

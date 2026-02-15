@@ -5,6 +5,7 @@ V-Link - Main Window
 import asyncio
 import os
 import socket
+import subprocess
 import sys
 import time
 from typing import Dict, List, Optional
@@ -27,7 +28,7 @@ from PyQt6.QtWidgets import (
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core import Settings, Updater, set_autostart
+from core import Settings, Updater, i18n, set_autostart, t
 from core.clipboard_sync import ClipboardSyncManager
 from version import __version__
 from network import DeviceDiscovery, RelayClient, TransferClient, TransferServer
@@ -40,10 +41,11 @@ SECURE_SHARED_SECRET = "vlink-secure-mode-v1"
 class MainWindow(QMainWindow):
     """Main window for V-Link."""
 
-    def __init__(self):
+    def __init__(self, settings: Optional[Settings] = None):
         super().__init__()
 
-        self.settings = Settings()
+        self.settings = settings or Settings()
+        i18n.load(self.settings.language)
         self._ensure_autostart_registration()
         self.discovery: Optional[DeviceDiscovery] = None
         self.server: Optional[TransferServer] = None
@@ -58,6 +60,8 @@ class MainWindow(QMainWindow):
         self._low_power_mode = False
         self._last_security_warning_ts = 0.0
         self._hotspot_detected = False
+        self._vpn_detected = False
+        self._multinet_detected = False
         self._effective_nonstandard_mode = False
         self._services_ready = False
         self._services_starting = False
@@ -146,7 +150,7 @@ class MainWindow(QMainWindow):
         title.setObjectName("titleLabel")
         title_layout.addWidget(title)
 
-        subtitle = QLabel("Быстрая передача файлов в локальной сети")
+        subtitle = QLabel(t("Быстрая передача файлов в локальной сети"))
         subtitle.setMinimumWidth(250)
         subtitle.setObjectName("subtitleLabel")
         title_layout.addWidget(subtitle)
@@ -154,8 +158,8 @@ class MainWindow(QMainWindow):
         header.addLayout(title_layout)
         header.addStretch()
 
-        self.update_btn = QPushButton("⬆ Обновить")
-        self.update_btn.setToolTip("Доступно обновление V-Link")
+        self.update_btn = QPushButton(t("⬆ Обновить"))
+        self.update_btn.setToolTip(t("Доступно обновление V-Link"))
         self.update_btn.setStyleSheet(
             """
             QPushButton {
@@ -174,7 +178,7 @@ class MainWindow(QMainWindow):
         self.update_btn.setVisible(False)
         header.addWidget(self.update_btn)
 
-        self.mobile_btn = QPushButton("Мобильник")
+        self.mobile_btn = QPushButton(t("Мобильник"))
         self.mobile_btn.setStyleSheet(
             """
             QPushButton {
@@ -189,11 +193,11 @@ class MainWindow(QMainWindow):
             QPushButton:hover { background: rgba(34, 197, 94, 0.15); }
             """
         )
-        self.mobile_btn.setToolTip("Подключить телефон через веб-интерфейс")
+        self.mobile_btn.setToolTip(t("Подключить телефон через веб-интерфейс"))
         self.mobile_btn.clicked.connect(self._open_mobile_connect)
         header.addWidget(self.mobile_btn)
 
-        self.settings_btn = QPushButton("Настройки")
+        self.settings_btn = QPushButton(t("Настройки"))
         self.settings_btn.setStyleSheet(
             """
             QPushButton {
@@ -208,7 +212,7 @@ class MainWindow(QMainWindow):
             QPushButton:hover { background: rgba(107, 92, 231, 0.2); }
             """
         )
-        self.settings_btn.setToolTip("Открыть настройки")
+        self.settings_btn.setToolTip(t("Открыть настройки"))
         self.settings_btn.clicked.connect(self._open_settings)
         header.addWidget(self.settings_btn)
 
@@ -217,7 +221,7 @@ class MainWindow(QMainWindow):
     def _create_status_bar(self) -> QHBoxLayout:
         status = QHBoxLayout()
 
-        self.status_label = QLabel("● Готов к работе")
+        self.status_label = QLabel(t("● Готов к работе"))
         self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
         status.addWidget(self.status_label)
 
@@ -229,7 +233,9 @@ class MainWindow(QMainWindow):
 
         return status
 
-    def show_startup_state(self, message: str = "● Запуск сервисов..."):
+    def show_startup_state(self, message: str = ""):
+        if not message:
+            message = t("● Запуск сервисов...")
         self.status_label.setText(message)
         self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
 
@@ -238,7 +244,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self,
             "V-Link",
-            "Сетевые сервисы ещё запускаются. Попробуйте через пару секунд.",
+            t("Сетевые сервисы ещё запускаются. Попробуйте через пару секунд."),
         )
 
     def _setup_tray(self):
@@ -259,21 +265,21 @@ class MainWindow(QMainWindow):
 
         tray_menu = QMenu()
 
-        show_action = QAction("Показать", self)
+        show_action = QAction(t("Показать"), self)
         show_action.triggered.connect(self._show_window)
         tray_menu.addAction(show_action)
 
-        hotspot_action = QAction("Хот-спот Windows", self)
+        hotspot_action = QAction(t("Хот-спот Windows"), self)
         hotspot_action.triggered.connect(self._open_hotspot_settings)
         tray_menu.addAction(hotspot_action)
 
-        downloads_action = QAction("Открыть папку загрузок", self)
+        downloads_action = QAction(t("Открыть папку загрузок"), self)
         downloads_action.triggered.connect(self._open_downloads_folder)
         tray_menu.addAction(downloads_action)
 
         tray_menu.addSeparator()
 
-        quit_action = QAction("Выход", self)
+        quit_action = QAction(t("Выход"), self)
         quit_action.triggered.connect(self._quit_app)
         tray_menu.addAction(quit_action)
 
@@ -321,7 +327,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "V-Link",
-                "Откройте вручную:\nПараметры Windows -> Сеть и Интернет -> Мобильный хот-спот",
+                t("Откройте вручную:\nПараметры Windows -> Сеть и Интернет -> Мобильный хот-спот"),
             )
 
     def _open_downloads_folder(self):
@@ -330,7 +336,7 @@ class MainWindow(QMainWindow):
             os.makedirs(folder, exist_ok=True)
             os.startfile(folder)
         except Exception:
-            QMessageBox.warning(self, "V-Link", f"Не удалось открыть папку:\n{folder}")
+            QMessageBox.warning(self, "V-Link", t("Не удалось открыть папку:\n{folder}", folder=folder))
 
     def _best_mobile_ip(self) -> str:
         if not self.discovery:
@@ -350,7 +356,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "V-Link",
-                "Сервисы ещё запускаются. Подождите несколько секунд и повторите.",
+                t("Сервисы ещё запускаются. Подождите несколько секунд и повторите."),
             )
             return
 
@@ -367,7 +373,7 @@ class MainWindow(QMainWindow):
         self.mobile_dialog = dialog
         self.mobile_dialog.show()
 
-        self.status_label.setText("● Мобильный доступ активен")
+        self.status_label.setText(t("● Мобильный доступ активен"))
         self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
 
     def _on_mobile_dialog_closed(self):
@@ -375,7 +381,7 @@ class MainWindow(QMainWindow):
             self.server.disable_mobile_share()
         self.mobile_dialog = None
         if not self._low_power_mode:
-            self.status_label.setText("● Активен")
+            self.status_label.setText(t("● Активен"))
             self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
 
     def _clipboard_peer_endpoints(self) -> List[tuple[str, int]]:
@@ -415,7 +421,7 @@ class MainWindow(QMainWindow):
         if self.discovery and self.loop:
             self.device_list.clear_devices()
             self.selected_device = None
-            self.status_label.setText("● Обновление...")
+            self.status_label.setText(t("● Обновление..."))
             async def do_refresh():
                 await self.discovery.refresh()
                 if self.relay:
@@ -436,6 +442,7 @@ class MainWindow(QMainWindow):
         old_autostart = self.settings.autostart
         old_clipboard_sync = self.settings.clipboard_sync_enabled
         old_clipboard_images = self.settings.clipboard_sync_images
+        old_language = self.settings.language
 
         dialog = SettingsDialog(self.settings, self)
         dialog.check_updates_clicked.connect(lambda: self._manual_update_check(dialog))
@@ -449,7 +456,7 @@ class MainWindow(QMainWindow):
                 set_autostart(self.settings.autostart)
             except Exception as e:
                 self.settings.set('autostart', old_autostart)
-                QMessageBox.warning(self, "V-Link", f"Не удалось изменить автозапуск: {e}")
+                QMessageBox.warning(self, "V-Link", t("Не удалось изменить автозапуск: {error}", error=e))
 
         if self.clipboard_sync and (
             old_clipboard_sync != self.settings.clipboard_sync_enabled
@@ -473,13 +480,96 @@ class MainWindow(QMainWindow):
                     await self.enter_low_power_mode()
             asyncio.run_coroutine_threadsafe(restart_flow(), self.loop)
 
+        if old_language != self.settings.language:
+            i18n.load(self.settings.language)
+            self._prompt_language_restart(old_language)
+
+    def _prompt_language_restart(self, previous_language: str):
+        answer = QMessageBox.question(
+            self,
+            "V-Link",
+            t("Обнаружено изменение языка. Перезапустить приложение сейчас, чтобы применить локализацию?"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self._restart_app_for_language()
+            return
+        i18n.load(previous_language)
+        QMessageBox.information(self, "V-Link", t("Язык будет применён после следующего запуска."))
+
+    def _restart_app_for_language(self):
+        try:
+            Updater._reset_windows_dll_directory()
+            env = Updater._sanitized_child_env()
+
+            if getattr(sys, "frozen", False):
+                exe_path = os.path.abspath(sys.executable)
+                workdir = os.path.dirname(exe_path)
+                arg_list = "@('--show-after-update')"
+            else:
+                exe_path = os.path.abspath(sys.executable)
+                workdir = os.path.dirname(os.path.abspath(__file__))
+                main_py = os.path.join(workdir, "main.py")
+                arg_list = "@('" + main_py.replace("'", "''") + "')"
+
+            pid_to_wait = int(os.getpid())
+            exe_path_ps = exe_path.replace("'", "''")
+            workdir_ps = workdir.replace("'", "''")
+            ps_command = (
+                f"$pidToWait={pid_to_wait}; "
+                "for ($i=0; $i -lt 120; $i++) { "
+                "if (-not (Get-Process -Id $pidToWait -ErrorAction SilentlyContinue)) { break }; "
+                "Start-Sleep -Milliseconds 250 "
+                "}; "
+                f"Start-Process -FilePath '{exe_path_ps}' "
+                f"-WorkingDirectory '{workdir_ps}' "
+                f"-ArgumentList {arg_list}"
+            )
+
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0
+
+            subprocess.Popen(
+                [
+                    Updater._powershell_exe(),
+                    "-NoProfile",
+                    "-WindowStyle",
+                    "Hidden",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    ps_command,
+                ],
+                env=env,
+                startupinfo=startupinfo,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+                close_fds=True,
+            )
+        except Exception:
+            try:
+                if getattr(sys, "frozen", False):
+                    subprocess.Popen([sys.executable, "--show-after-update"])
+                else:
+                    main_py = os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")
+                    subprocess.Popen([sys.executable, main_py])
+            except Exception:
+                pass
+        self._quit_app()
+
     def _manual_update_check(self, settings_dialog):
         if not self.updater:
             return
 
-        # Create a modal progress dialog parented to the settings dialog.
-        # WindowModal ensures it blocks input to settings but stays on top.
-        self._progress_dialog = QProgressDialog("Поиск обновлений...", "Отмена", 0, 0, settings_dialog)
+        # Модальный прогресс поверх настроек
+        self._progress_dialog = QProgressDialog(
+            t("Поиск обновлений..."),
+            t("Отмена"),
+            0,
+            0,
+            settings_dialog,
+        )
         self._progress_dialog.setWindowTitle("V-Link")
         self._progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
         self._progress_dialog.setAutoClose(False)
@@ -518,7 +608,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(
                     settings_dialog, 
                     "V-Link", 
-                    "У вас установлена последняя версия."
+                    t("У вас установлена последняя версия.")
                 )
 
         except asyncio.CancelledError:
@@ -531,7 +621,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 settings_dialog, 
                 "V-Link", 
-                f"Ошибка проверки:\n{e}"
+                t("Ошибка проверки:\n{error}", error=e)
             )
         finally:
             self._check_task = None
@@ -552,9 +642,10 @@ class MainWindow(QMainWindow):
 
         self.ip_label.setText(f"IP: {primary}:{port}")
         if len(ips) > 1:
-            self.ip_label.setToolTip("Локальные адреса:\n" + "\n".join(f"• {ip}:{port}" for ip in ips))
+            address_list = "\n".join(f"• {ip}:{port}" for ip in ips)
+            self.ip_label.setToolTip(t("Локальные адреса:\n{addresses}", addresses=address_list))
         else:
-            self.ip_label.setToolTip(f"Локальный адрес: {primary}:{port}")
+            self.ip_label.setToolTip(t("Локальный адрес: {address}", address=f"{primary}:{port}"))
 
     def _schedule_network_sync(self):
         if self.loop and self.discovery:
@@ -572,7 +663,7 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot()
     def _on_network_changed(self):
-        self.status_label.setText("● Сеть изменилась, адрес обновлён")
+        self.status_label.setText(t("● Сеть изменилась, адрес обновлён"))
         self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
 
     @pyqtSlot()
@@ -591,7 +682,14 @@ class MainWindow(QMainWindow):
             secure_mode = self.settings.secure_mode
             manual_nonstandard_mode = self.settings.nonstandard_network_mode
             self._hotspot_detected = self._detect_hotspot_environment()
-            compatibility_mode = manual_nonstandard_mode or self._hotspot_detected
+            self._vpn_detected = DeviceDiscovery.detect_vpn_environment()
+            self._multinet_detected = DeviceDiscovery.detect_multi_network_environment()
+            compatibility_mode = (
+                manual_nonstandard_mode
+                or self._hotspot_detected
+                or self._vpn_detected
+                or self._multinet_detected
+            )
             self._effective_nonstandard_mode = compatibility_mode
             relay_mode = self.settings.relay_mode
             relay_url = self.settings.relay_server_url
@@ -619,7 +717,11 @@ class MainWindow(QMainWindow):
                 self.settings.set("port", int(actual_port))
                 self.device_list.default_port = int(actual_port)
                 self._on_server_error(
-                    f"Порт {requested_port} недоступен, автоматически выбран {actual_port}"
+                    t(
+                        "Порт {requested_port} недоступен, автоматически выбран {actual_port}",
+                        requested_port=requested_port,
+                        actual_port=actual_port,
+                    )
                 )
 
             self.discovery = DeviceDiscovery(actual_port, compatibility_mode=compatibility_mode)
@@ -685,22 +787,25 @@ class MainWindow(QMainWindow):
 
             self._update_ip_label()
             if relay_mode and not relay_url:
-                self.status_label.setText("● Активен (Relay включён, но URL не задан)")
+                self.status_label.setText(t("● Активен (Relay включён, но URL не задан)"))
                 self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
             elif self._hotspot_detected and not manual_nonstandard_mode:
-                self.status_label.setText("● Активен (обнаружен хот-спот, включён совместимый режим)")
+                self.status_label.setText(t("● Активен (обнаружен хот-спот, включён совместимый режим)"))
+                self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
+            elif self._vpn_detected and not manual_nonstandard_mode:
+                self.status_label.setText(t("● Активен (обнаружен VPN, включён совместимый режим)"))
                 self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
             elif compatibility_mode and relay_ready:
-                self.status_label.setText("● Активен (нестандартные сети + Relay)")
+                self.status_label.setText(t("● Активен (нестандартные сети + Relay)"))
                 self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
             elif compatibility_mode:
-                self.status_label.setText("● Активен (режим нестандартных сетей)")
+                self.status_label.setText(t("● Активен (режим нестандартных сетей)"))
                 self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
             elif relay_ready:
-                self.status_label.setText("● Активен (Relay)")
+                self.status_label.setText(t("● Активен (Relay)"))
                 self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
             else:
-                self.status_label.setText("● Активен")
+                self.status_label.setText(t("● Активен"))
                 self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
 
             if not self._network_timer.isActive():
@@ -767,7 +872,7 @@ class MainWindow(QMainWindow):
             self.relay.set_low_power_mode(True)
 
         self.transfer_list.set_low_power_mode(True)
-        self.status_label.setText("● Фон: экономия ресурсов")
+        self.status_label.setText(t("● Фон: экономия ресурсов"))
         self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
 
     async def exit_low_power_mode(self):
@@ -786,15 +891,15 @@ class MainWindow(QMainWindow):
             self._network_timer.start()
 
         self.transfer_list.set_low_power_mode(False)
-        self.status_label.setText("● Активен")
+        self.status_label.setText(t("● Активен"))
         self.status_label.setStyleSheet("color: #22c55e; font-size: 12px;")
 
     def _on_server_error(self, error: str):
         if "Relay" in (error or ""):
-            self.status_label.setText("● Relay временно недоступен")
+            self.status_label.setText(t("● Relay временно недоступен"))
             self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
         else:
-            self.status_label.setText("● Ошибка")
+            self.status_label.setText(t("● Ошибка"))
             self.status_label.setStyleSheet("color: #ef4444; font-size: 12px;")
         print(error)
 
@@ -892,7 +997,7 @@ class MainWindow(QMainWindow):
     def _on_device_selected(self, name: str, ip: str, port: int):
         self.selected_device = (name, ip, port)
         if str(ip).startswith("relay:"):
-            self.status_label.setText(f"● Выбрано Relay: {name}")
+            self.status_label.setText(t("● Выбрано Relay: {name}", name=name))
         else:
             is_online = True
             if self.discovery:
@@ -905,9 +1010,9 @@ class MainWindow(QMainWindow):
                         is_online = bool(device.get("reachable", True))
                         break
             if is_online:
-                self.status_label.setText(f"● Выбрано: {name}")
+                self.status_label.setText(t("● Выбрано: {name}", name=name))
             else:
-                self.status_label.setText(f"● Выбрано: {name} (может быть недоступно)")
+                self.status_label.setText(t("● Выбрано: {name} (может быть недоступно)", name=name))
                 self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
 
     @pyqtSlot(list)
@@ -921,21 +1026,21 @@ class MainWindow(QMainWindow):
             QMetaObject.invokeMethod(self, "_show_services_starting", Qt.ConnectionType.QueuedConnection)
             return
 
-        if not self.selected_device:
-            fallback_selected = self.device_list.get_selected_device()
-            if fallback_selected:
-                self.selected_device = fallback_selected
-            else:
-                QMessageBox.information(self, "V-Link", "Сначала выберите устройство из списка")
-                return
+            if not self.selected_device:
+                fallback_selected = self.device_list.get_selected_device()
+                if fallback_selected:
+                    self.selected_device = fallback_selected
+                else:
+                    QMessageBox.information(self, "V-Link", t("Сначала выберите устройство из списка"))
+                    return
 
         if not self.selected_device:
-            QMessageBox.information(self, "V-Link", "Сначала выберите устройство из списка")
+            QMessageBox.information(self, "V-Link", t("Сначала выберите устройство из списка"))
             return
 
         valid_files = [f for f in files if os.path.exists(f)]
         if not valid_files:
-            QMessageBox.warning(self, "V-Link", "Файлы не найдены")
+            QMessageBox.warning(self, "V-Link", t("Файлы не найдены"))
             return
 
         name, ip, port = self.selected_device
@@ -947,7 +1052,7 @@ class MainWindow(QMainWindow):
                     QMetaObject.invokeMethod(self, "_show_relay_unavailable", Qt.ConnectionType.QueuedConnection)
                     return
                 try:
-                    self.status_label.setText("● Передача через Relay...")
+                    self.status_label.setText(t("● Передача через Relay..."))
                     await self.relay.send_files(valid_files, relay_peer_id, target_name=name)
                     return
                 except Exception as e:
@@ -994,11 +1099,15 @@ class MainWindow(QMainWindow):
             last_error = None
             for candidate_ip, candidate_port in ranked:
                 try:
-                    self.status_label.setText(f"● Проверка маршрута: {candidate_ip}:{candidate_port}")
+                    self.status_label.setText(
+                        t("● Проверка маршрута: {ip}:{port}", ip=candidate_ip, port=candidate_port)
+                    )
                     await self.client.send_files(valid_files, candidate_ip, candidate_port, target_name=name)
                     if (candidate_ip, candidate_port) != (ip, port):
                         self.selected_device = (name, candidate_ip, candidate_port)
-                        self.status_label.setText(f"● Обновлён адрес: {name} ({candidate_ip}:{candidate_port})")
+                        self.status_label.setText(
+                            t("● Обновлён адрес: {name} ({ip}:{port})", name=name, ip=candidate_ip, port=candidate_port)
+                        )
                     self.settings.set('adaptive_profile', self.client.get_adaptive_profile())
                     return
                 except Exception as e:
@@ -1009,7 +1118,7 @@ class MainWindow(QMainWindow):
                 relay_peer_id = self.relay.find_peer_by_name(name)
                 if relay_peer_id and self.relay.has_peer(relay_peer_id):
                     try:
-                        self.status_label.setText("● Прямой маршрут недоступен, пробуем Relay...")
+                        self.status_label.setText(t("● Прямой маршрут недоступен, пробуем Relay..."))
                         await self.relay.send_files(valid_files, relay_peer_id, target_name=name)
                         self.selected_device = (name, f"relay:{relay_peer_id}", 0)
                         return
@@ -1041,40 +1150,44 @@ class MainWindow(QMainWindow):
         device_info = ""
         if self.selected_device:
             name, ip, port = self.selected_device
-            device_info = f"\n\nУстройство: {name}\nIP: {ip}:{port}"
+            device_info = "\n\n" + t("Устройство: {name}\nIP: {ip}:{port}", name=name, ip=ip, port=port)
 
         QMessageBox.warning(
             self,
             "V-Link",
-            "Устройство обнаружено, но сейчас не отвечает.\n\n"
-            "Возможные причины:\n"
-            "• V-Link не запущен на другом устройстве\n"
-            "• Брандмауэр или VPN блокируют соединение\n"
-            "• Устройства в разных сетях\n"
-            "• Сеть с изоляцией клиентов (guest/AP isolation) запрещает прямые подключения\n"
-            "• Для вузов/хотспотов включите «Режим нестандартных сетей» в настройках\n"
-            "• Если один ноутбук раздаёт Wi‑Fi, профиль хот-спота включается автоматически\n"
-            "• Relay-режим нужен только как дополнительный вариант, если прямой режим недоступен"
-            f"{device_info}",
+            t(
+                "Устройство обнаружено, но сейчас не отвечает.\n\n"
+                "Возможные причины:\n"
+                "• V-Link не запущен на другом устройстве\n"
+                "• Брандмауэр или VPN блокируют соединение\n"
+                "• Устройства в разных сетях\n"
+                "• Сеть с изоляцией клиентов (guest/AP isolation) запрещает прямые подключения\n"
+                "• Для вузов/хотспотов включите «Режим нестандартных сетей» в настройках\n"
+                "• Если один ноутбук раздаёт Wi‑Fi, профиль хот-спота включается автоматически\n"
+                "• Relay-режим нужен только как дополнительный вариант, если прямой режим недоступен{device_info}",
+                device_info=device_info,
+            ),
         )
         self.selected_device = None
         self.device_list.clear_selection()
-        self.status_label.setText("● Готов к работе")
+        self.status_label.setText(t("● Готов к работе"))
 
     @pyqtSlot()
     def _show_relay_unavailable(self):
         QMessageBox.warning(
             self,
             "V-Link",
-            "Relay-устройство недоступно.\n\n"
-            "Проверьте:\n"
-            "• Оба устройства онлайн и подключены к одному Relay-каналу\n"
-            "• Relay URL одинаковый на обоих устройствах\n"
-            "• Relay-сервер запущен",
+            t(
+                "Relay-устройство недоступно.\n\n"
+                "Проверьте:\n"
+                "• Оба устройства онлайн и подключены к одному Relay-каналу\n"
+                "• Relay URL одинаковый на обоих устройствах\n"
+                "• Relay-сервер запущен"
+            ),
         )
         self.selected_device = None
         self.device_list.clear_selection()
-        self.status_label.setText("● Готов к работе")
+        self.status_label.setText(t("● Готов к работе"))
 
     def _on_incoming_transfer_start(self, transfer_id: str, filename: str, total_size: int, is_upload: bool):
         item = self.transfer_list.add_transfer(transfer_id, filename, total_size, False)
@@ -1099,11 +1212,13 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _human_size(size_bytes: int) -> str:
-        for unit in ("Б", "КБ", "МБ", "ГБ"):
+        units = (t("Б"), t("КБ"), t("МБ"), t("ГБ"))
+        bytes_unit = t("Б")
+        for unit in units:
             if abs(size_bytes) < 1024:
-                return f"{size_bytes:.1f} {unit}" if unit != "Б" else f"{size_bytes} {unit}"
+                return f"{size_bytes:.1f} {unit}" if unit != bytes_unit else f"{size_bytes} {unit}"
             size_bytes /= 1024
-        return f"{size_bytes:.1f} ТБ"
+        return f"{size_bytes:.1f} {t('ТБ')}"
 
     def _on_transfer_complete(self, transfer_id: str, filepath: str):
         self.transfer_list.complete_transfer(transfer_id, filepath)
@@ -1111,9 +1226,9 @@ class MainWindow(QMainWindow):
             direction, size = self._transfer_directions.pop(transfer_id, ("in", 0))
             name = os.path.basename(filepath)
             if direction == "in":
-                msg = f"📥 Получен: {name}"
+                msg = t("📥 Получен: {name}", name=name)
             else:
-                msg = f"📤 Отправлен: {name}"
+                msg = t("📤 Отправлен: {name}", name=name)
             if size > 0:
                 msg += f" ({self._human_size(size)})"
             self.tray_icon.showMessage(
@@ -1156,8 +1271,10 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(
             self,
             "V-Link",
-            "Передача отклонена из-за несовпадения Безопасного режима.\n\n"
-            "Проверьте, что на обоих устройствах этот режим либо включен, либо выключен.",
+            t(
+                "Передача отклонена из-за несовпадения Безопасного режима.\n\n"
+                "Проверьте, что на обоих устройствах этот режим либо включен, либо выключен."
+            ),
         )
 
     @pyqtSlot(str)
@@ -1165,19 +1282,18 @@ class MainWindow(QMainWindow):
         short = (error or "").strip()
         if len(short) > 300:
             short = short[:300] + "..."
-        self.status_label.setText("● Ошибка передачи")
+        self.status_label.setText(t("● Ошибка передачи"))
         self.status_label.setStyleSheet("color: #ef4444; font-size: 12px;")
         QMessageBox.warning(
             self,
             "V-Link",
-            "Передача не выполнена.\n\n"
-            f"Причина: {short}",
+            t("Передача не выполнена.\n\nПричина: {error}", error=short),
         )
 
     def _on_transfer_error(self, transfer_id: str, error: str):
         self.transfer_list.error_transfer(transfer_id, error)
         if self._is_security_mismatch_error(error):
-            self.status_label.setText("● Проверьте, что Безопасный режим одинаков на обоих устройствах")
+            self.status_label.setText(t("● Проверьте, что Безопасный режим одинаков на обоих устройствах"))
             self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
             QMetaObject.invokeMethod(self, "_show_security_mismatch_warning", Qt.ConnectionType.QueuedConnection)
 
@@ -1193,7 +1309,7 @@ class MainWindow(QMainWindow):
                 asyncio.run_coroutine_threadsafe(self.enter_low_power_mode(), self.loop)
             self.tray_icon.showMessage(
                 "V-Link",
-                "Программа свёрнута в трей",
+                t("Программа свёрнута в трей"),
                 QSystemTrayIcon.MessageIcon.Information,
                 2000,
             )
@@ -1226,9 +1342,7 @@ class MainWindow(QMainWindow):
     def _finalize_quit(self):
         QApplication.quit()
 
-    # ------------------------------------------------------------------
-    # Auto-update
-    # ------------------------------------------------------------------
+
 
     def _init_updater(self):
         if self.updater:
@@ -1246,7 +1360,7 @@ class MainWindow(QMainWindow):
     @pyqtSlot(str)
     def _show_update_button(self, version: str):
         self.update_btn.setText(f"⬆ {version}")
-        self.update_btn.setToolTip(f"Доступно обновление V-Link {version}")
+        self.update_btn.setToolTip(t("Доступно обновление V-Link {version}", version=version))
         self.update_btn.setVisible(True)
 
     async def _check_for_update(self, force: bool = False):
@@ -1265,12 +1379,12 @@ class MainWindow(QMainWindow):
             return
 
         version = self.updater.update_version
-        body = self.updater.update_body or "Нет описания."
+        body = self.updater.update_body or t("Нет описания.")
 
         msg = QMessageBox(self)
-        msg.setWindowTitle("V-Link — Обновление")
+        msg.setWindowTitle(t("V-Link — Обновление"))
         msg.setIcon(QMessageBox.Icon.Information)
-        msg.setText(f"Доступна новая версия: <b>{version}</b>")
+        msg.setText(t("Доступна новая версия: <b>{version}</b>", version=version))
         # Strip markdown formatting for plain-text QMessageBox display
         import re
         clean_body = body
@@ -1280,8 +1394,8 @@ class MainWindow(QMainWindow):
         clean_body = re.sub(r'^\s*[-\*]\s+', '• ', clean_body, flags=re.MULTILINE)  # - list items
         clean_body = clean_body.strip()
         msg.setInformativeText(clean_body[:800])
-        btn_update = msg.addButton("Обновить", QMessageBox.ButtonRole.AcceptRole)
-        btn_skip = msg.addButton("Пропустить", QMessageBox.ButtonRole.RejectRole)
+        btn_update = msg.addButton(t("Обновить"), QMessageBox.ButtonRole.AcceptRole)
+        btn_skip = msg.addButton(t("Пропустить"), QMessageBox.ButtonRole.RejectRole)
         msg.setDefaultButton(btn_update)
         msg.exec()
 
@@ -1321,18 +1435,18 @@ class MainWindow(QMainWindow):
 
     @pyqtSlot(int)
     def _update_download_progress_ui(self, percent: int):
-        self.status_label.setText(f"● Скачивание обновления: {percent}%")
+        self.status_label.setText(t("● Скачивание обновления: {percent}%", percent=percent))
         self.status_label.setStyleSheet("color: #6b5ce7; font-size: 12px;")
 
     @pyqtSlot()
     def _update_status_downloading(self):
-        self.status_label.setText("● Скачивание обновления...")
+        self.status_label.setText(t("● Скачивание обновления..."))
         self.status_label.setStyleSheet("color: #6b5ce7; font-size: 12px;")
         self.update_btn.setEnabled(False)
 
     @pyqtSlot()
     def _update_status_error(self):
-        self.status_label.setText("● Ошибка загрузки обновления")
+        self.status_label.setText(t("● Ошибка загрузки обновления"))
         self.status_label.setStyleSheet("color: #ef4444; font-size: 12px;")
         self.update_btn.setEnabled(True)
 
@@ -1346,28 +1460,30 @@ class MainWindow(QMainWindow):
         msg = QMessageBox(self)
         msg.setWindowTitle("V-Link")
         msg.setIcon(QMessageBox.Icon.Question)
-        msg.setText("Обновление скачано. Перезапустить приложение?")
+        msg.setText(t("Обновление скачано. Перезапустить приложение?"))
         msg.setInformativeText(
-            "V-Link закроется, обновится и запустится заново.\n"
-            "Настройки будут сохранены."
+            t(
+                "V-Link закроется, обновится и запустится заново.\n"
+                "Настройки будут сохранены."
+            )
         )
-        btn_yes = msg.addButton("Да", QMessageBox.ButtonRole.YesRole)
-        btn_no = msg.addButton("Нет", QMessageBox.ButtonRole.NoRole)
+        btn_yes = msg.addButton(t("Да"), QMessageBox.ButtonRole.YesRole)
+        btn_no = msg.addButton(t("Нет"), QMessageBox.ButtonRole.NoRole)
         msg.setDefaultButton(btn_yes)
         msg.exec()
 
         if msg.clickedButton() != btn_yes:
-            self.status_label.setText("● Обновление отложено")
+            self.status_label.setText(t("● Обновление отложено"))
             self.status_label.setStyleSheet("color: #f59e0b; font-size: 12px;")
             self.update_btn.setEnabled(True)
             return
 
-        self.status_label.setText("● Применение обновления...")
+        self.status_label.setText(t("● Применение обновления..."))
         self.status_label.setStyleSheet("color: #6b5ce7; font-size: 12px;")
 
         started = self.updater.apply_update(Path(downloaded_path))
         if not started:
-            self.status_label.setText("● Не удалось запустить обновление")
+            self.status_label.setText(t("● Не удалось запустить обновление"))
             self.status_label.setStyleSheet("color: #ef4444; font-size: 12px;")
             self.update_btn.setEnabled(True)
             return
@@ -1381,7 +1497,7 @@ class MainWindow(QMainWindow):
         if self._quitting:
             return
         self._quitting = True
-        self.status_label.setText("● Перезапуск для обновления...")
+        self.status_label.setText(t("● Перезапуск для обновления..."))
         self.status_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
         self.tray_icon.hide()
 
@@ -1399,7 +1515,7 @@ class MainWindow(QMainWindow):
         if self._quitting:
             return
         self._quitting = True
-        self.status_label.setText("● Завершение...")
+        self.status_label.setText(t("● Завершение..."))
         self.status_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
         self.tray_icon.hide()
 

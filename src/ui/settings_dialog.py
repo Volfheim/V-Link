@@ -4,6 +4,7 @@ V-Link - Settings Dialog
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDialog,
     QFileDialog,
     QGroupBox,
@@ -21,6 +22,7 @@ from PyQt6.QtWidgets import (
 
 from ui.custom_widgets import CheckBoxWithMark
 from version import __version__
+from core.i18n import t
 
 
 class SettingsDialog(QDialog):
@@ -32,7 +34,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.settings = settings
 
-        self.setWindowTitle("Настройки")
+        self.setWindowTitle(t("Настройки"))
         self.setMinimumSize(720, 700)
         self.resize(780, 740)
         self.setSizeGripEnabled(False)
@@ -101,12 +103,12 @@ class SettingsDialog(QDialog):
         content_layout.setContentsMargins(8, 8, 8, 8)
         content_layout.setSpacing(16)
 
-        network_group = QGroupBox("Сеть")
+        network_group = QGroupBox(t("Сеть"))
         network_layout = QVBoxLayout(network_group)
         network_layout.setSpacing(12)
 
         port_layout = QHBoxLayout()
-        port_label = QLabel("Порт для передачи:")
+        port_label = QLabel(t("Порт для передачи:"))
         port_label.setMinimumWidth(180)
         port_layout.addWidget(port_label)
 
@@ -119,21 +121,23 @@ class SettingsDialog(QDialog):
         network_layout.addLayout(port_layout)
 
         self.nonstandard_network_check = CheckBoxWithMark(
-            "Режим нестандартных сетей (вуз/гостевой Wi-Fi/хотспот)"
+            t("Режим нестандартных сетей (вуз/гостевой Wi-Fi/хотспот)")
         )
         self.nonstandard_network_check.setChecked(True)
         network_layout.addWidget(self.nonstandard_network_check)
 
         network_hint = QLabel(
-            "Основной режим для вузовских/гостевых Wi‑Fi и хотспотов. "
-            "Не требует relay-сервера и работает в пределах локальной сети."
+            t(
+                "Основной режим для вузовских/гостевых Wi‑Fi и хотспотов. "
+                "Не требует relay-сервера и работает в пределах локальной сети."
+            )
         )
         network_hint.setWordWrap(True)
         network_hint.setStyleSheet("color: #64748b; font-size: 11px;")
         network_layout.addWidget(network_hint)
 
         self.relay_mode_check = CheckBoxWithMark(
-            "Relay-режим для сетей с изоляцией клиентов (через сервер)"
+            t("Relay-режим для сетей с изоляцией клиентов (через сервер)")
         )
         self.relay_mode_check.toggled.connect(self._toggle_relay_fields)
         network_layout.addWidget(self.relay_mode_check)
@@ -143,60 +147,66 @@ class SettingsDialog(QDialog):
         relay_url_label.setMinimumWidth(180)
         relay_url_row.addWidget(relay_url_label)
         self.relay_url_edit = QLineEdit()
-        self.relay_url_edit.setPlaceholderText("http://192.168.1.10:8090 или https://relay.example.com")
-        self.relay_url_edit.setToolTip("Адрес запущенного relay-сервера")
+        self.relay_url_edit.setPlaceholderText(
+            t("http://192.168.1.10:8090 или https://relay.example.com")
+        )
+        self.relay_url_edit.setToolTip(t("Адрес запущенного relay-сервера"))
         relay_url_row.addWidget(self.relay_url_edit)
         network_layout.addLayout(relay_url_row)
 
         relay_channel_row = QHBoxLayout()
-        relay_channel_label = QLabel("Канал (одинаковый на обоих ПК):")
+        relay_channel_label = QLabel(t("Канал (одинаковый на обоих ПК):"))
         relay_channel_label.setMinimumWidth(180)
         relay_channel_row.addWidget(relay_channel_label)
         self.relay_channel_edit = QLineEdit()
-        self.relay_channel_edit.setPlaceholderText("например: home, pgtu, group-a")
-        self.relay_channel_edit.setToolTip("Одинаковое имя канала на обоих устройствах")
+        self.relay_channel_edit.setPlaceholderText(t("например: home, pgtu, group-a"))
+        self.relay_channel_edit.setToolTip(t("Одинаковое имя канала на обоих устройствах"))
         relay_channel_row.addWidget(self.relay_channel_edit)
         network_layout.addLayout(relay_channel_row)
 
         relay_hint = QLabel(
-            "Требуется отдельный relay-сервер (локальный ПК/NAS/VPS). "
-            "Используется, когда прямое подключение в сети недоступно. "
-            "Обычно медленнее, чем прямой LAN-режим."
+            t(
+                "Требуется отдельный relay-сервер (локальный ПК/NAS/VPS). "
+                "Используется, когда прямое подключение в сети недоступно. "
+                "Обычно медленнее, чем прямой LAN-режим."
+            )
         )
         relay_hint.setWordWrap(True)
         relay_hint.setStyleSheet("color: #64748b; font-size: 11px;")
         network_layout.addWidget(relay_hint)
 
-        storage_group = QGroupBox("Хранилище")
+        storage_group = QGroupBox(t("Хранилище"))
         storage_layout = QVBoxLayout(storage_group)
         storage_layout.setSpacing(12)
 
-        folder_label = QLabel("Папка для загрузок:")
+        folder_label = QLabel(t("Папка для загрузок:"))
         storage_layout.addWidget(folder_label)
 
         download_layout = QHBoxLayout()
         self.download_edit = QLineEdit()
-        self.download_edit.setPlaceholderText("Выберите папку...")
+        self.download_edit.setPlaceholderText(t("Выберите папку..."))
         self.download_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         download_layout.addWidget(self.download_edit)
 
-        browse_btn = QPushButton("Обзор...")
+        browse_btn = QPushButton(t("Обзор..."))
         browse_btn.setObjectName("browseBtn")
         browse_btn.clicked.connect(self._browse_folder)
         download_layout.addWidget(browse_btn)
         storage_layout.addLayout(download_layout)
         content_layout.addWidget(storage_group)
 
-        security_group = QGroupBox("Безопасность")
+        security_group = QGroupBox(t("Безопасность"))
         security_layout = QVBoxLayout(security_group)
         security_layout.setSpacing(8)
 
-        self.secure_mode_check = CheckBoxWithMark("Безопасный режим передачи (медленнее, но надёжнее)")
+        self.secure_mode_check = CheckBoxWithMark(t("Безопасный режим передачи (медленнее, но надёжнее)"))
         security_layout.addWidget(self.secure_mode_check)
 
         secure_hint = QLabel(
-            "Включает проверку целостности и подтверждение между устройствами. "
-            "Может немного снижать скорость, особенно на больших файлах."
+            t(
+                "Включает проверку целостности и подтверждение между устройствами. "
+                "Может немного снижать скорость, особенно на больших файлах."
+            )
         )
         secure_hint.setWordWrap(True)
         secure_hint.setStyleSheet("color: #64748b; font-size: 11px;")
@@ -204,42 +214,61 @@ class SettingsDialog(QDialog):
 
         content_layout.addWidget(security_group)
 
-        behavior_group = QGroupBox("Поведение")
+        behavior_group = QGroupBox(t("Поведение"))
         behavior_layout = QVBoxLayout(behavior_group)
         behavior_layout.setSpacing(8)
 
-        self.minimize_check = CheckBoxWithMark("Запускать свёрнутым в трей")
+        self.minimize_check = CheckBoxWithMark(t("Запускать свёрнутым в трей"))
         behavior_layout.addWidget(self.minimize_check)
 
-        self.autostart_check = CheckBoxWithMark("Запускать вместе с Windows")
+        self.autostart_check = CheckBoxWithMark(t("Запускать вместе с Windows"))
         behavior_layout.addWidget(self.autostart_check)
 
-        self.close_to_tray_check = CheckBoxWithMark("При закрытии сворачивать в трей")
+        self.close_to_tray_check = CheckBoxWithMark(t("При закрытии сворачивать в трей"))
         behavior_layout.addWidget(self.close_to_tray_check)
 
-        auto_mode = QLabel("Режим передачи: автоматически оптимизируется приложением")
+        auto_mode = QLabel(t("Режим передачи: автоматически оптимизируется приложением"))
         auto_mode.setWordWrap(True)
         auto_mode.setStyleSheet("color: #64748b; font-size: 11px;")
         behavior_layout.addWidget(auto_mode)
 
         content_layout.addWidget(behavior_group)
 
-        clipboard_group = QGroupBox("Буфер обмена")
+        language_group = QGroupBox(t("Язык"))
+        language_layout = QVBoxLayout(language_group)
+        language_layout.setSpacing(8)
+
+        self.language_combo = QComboBox()
+        self.language_combo.addItem(t("Как в системе"), "system")
+        self.language_combo.addItem(t("Русский"), "ru")
+        self.language_combo.addItem(t("Английский"), "en")
+        language_layout.addWidget(self.language_combo)
+
+        language_hint = QLabel(t("Требуется перезапуск для применения языка."))
+        language_hint.setWordWrap(True)
+        language_hint.setStyleSheet("color: #64748b; font-size: 11px;")
+        language_layout.addWidget(language_hint)
+
+        content_layout.addWidget(language_group)
+
+        clipboard_group = QGroupBox(t("Буфер обмена"))
         clipboard_layout = QVBoxLayout(clipboard_group)
         clipboard_layout.setSpacing(8)
 
-        self.clipboard_sync_check = CheckBoxWithMark("Синхронизация текста между устройствами")
+        self.clipboard_sync_check = CheckBoxWithMark(t("Синхронизация текста между устройствами"))
         self.clipboard_sync_check.setChecked(True)
         self.clipboard_sync_check.toggled.connect(self._toggle_clipboard_options)
         clipboard_layout.addWidget(self.clipboard_sync_check)
 
-        self.clipboard_image_check = CheckBoxWithMark("Синхронизация изображений (может быть медленнее)")
+        self.clipboard_image_check = CheckBoxWithMark(t("Синхронизация изображений (может быть медленнее)"))
         self.clipboard_image_check.setChecked(False)
         clipboard_layout.addWidget(self.clipboard_image_check)
 
         clipboard_hint = QLabel(
-            "Работает только между устройствами с запущенным V-Link в одной сети. "
-            "Для изображений действует ограничение по размеру, чтобы не нагружать сеть."
+            t(
+                "Работает только между устройствами с запущенным V-Link в одной сети. "
+                "Для изображений действует ограничение по размеру, чтобы не нагружать сеть."
+            )
         )
         clipboard_hint.setWordWrap(True)
         clipboard_hint.setStyleSheet("color: #64748b; font-size: 11px;")
@@ -248,7 +277,7 @@ class SettingsDialog(QDialog):
         content_layout.addWidget(clipboard_group)
         content_layout.addWidget(network_group)
 
-        about_group = QGroupBox("О программе")
+        about_group = QGroupBox(t("О программе"))
         about_layout = QVBoxLayout(about_group)
         about_layout.setSpacing(12)
 
@@ -256,12 +285,12 @@ class SettingsDialog(QDialog):
         version_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #f8fafc;")
         about_layout.addWidget(version_label)
 
-        author_label = QLabel("Создано Volfheim © 2026")
+        author_label = QLabel(t("Создано Volfheim © 2026"))
         author_label.setStyleSheet("color: #94a3b8; font-size: 12px;")
         about_layout.addWidget(author_label)
 
-        check_updates_btn = QPushButton("Проверить обновления")
-        check_updates_btn.setToolTip("Принудительно проверить наличие новой версии на GitHub")
+        check_updates_btn = QPushButton(t("Проверить обновления"))
+        check_updates_btn.setToolTip(t("Принудительно проверить наличие новой версии на GitHub"))
         check_updates_btn.clicked.connect(self.check_updates_clicked.emit)
         check_updates_btn.setStyleSheet("""
             QPushButton {
@@ -286,12 +315,12 @@ class SettingsDialog(QDialog):
         buttons = QHBoxLayout()
         buttons.addStretch()
 
-        cancel_btn = QPushButton("Отмена")
+        cancel_btn = QPushButton(t("Отмена"))
         cancel_btn.setObjectName("cancelBtn")
         cancel_btn.clicked.connect(self.reject)
         buttons.addWidget(cancel_btn)
 
-        save_btn = QPushButton("Сохранить")
+        save_btn = QPushButton(t("Сохранить"))
         save_btn.clicked.connect(self._save_and_close)
         buttons.addWidget(save_btn)
 
@@ -300,7 +329,7 @@ class SettingsDialog(QDialog):
     def _browse_folder(self):
         folder = QFileDialog.getExistingDirectory(
             self,
-            "Выберите папку для загрузок",
+            t("Выберите папку для загрузок"),
             self.download_edit.text(),
         )
         if folder:
@@ -317,6 +346,9 @@ class SettingsDialog(QDialog):
         self.minimize_check.setChecked(self.settings.get('start_minimized', False))
         self.autostart_check.setChecked(self.settings.get('autostart', False))
         self.close_to_tray_check.setChecked(self.settings.get('close_to_tray', True))
+        current_lang = str(self.settings.get('language', 'system') or 'system').lower()
+        idx = self.language_combo.findData(current_lang)
+        self.language_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.clipboard_sync_check.setChecked(self.settings.get('clipboard_sync_enabled', True))
         self.clipboard_image_check.setChecked(self.settings.get('clipboard_sync_images', False))
         self._toggle_relay_fields(self.relay_mode_check.isChecked())
@@ -336,7 +368,7 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "V-Link",
-                "Для Relay-режима укажите Relay URL.",
+                t("Для Relay-режима укажите Relay URL."),
             )
             return
 
@@ -351,6 +383,7 @@ class SettingsDialog(QDialog):
             'start_minimized': self.minimize_check.isChecked(),
             'autostart': self.autostart_check.isChecked(),
             'close_to_tray': self.close_to_tray_check.isChecked(),
+            'language': str(self.language_combo.currentData() or "system"),
             'clipboard_sync_enabled': self.clipboard_sync_check.isChecked(),
             'clipboard_sync_images': self.clipboard_image_check.isChecked(),
         })

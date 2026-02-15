@@ -7,6 +7,7 @@ import os
 import sys
 import time
 import base64
+import json
 import hashlib
 import secrets
 import string
@@ -20,6 +21,8 @@ import aiofiles
 import lz4.frame
 from aiohttp import web
 from cryptography.fernet import Fernet
+
+from core.i18n import i18n, t
 
 
 CHUNK_SIZE = 1024 * 1024  # 1 MB
@@ -147,13 +150,14 @@ class TransferServer:
         return base
 
     def _get_forbidden_html(self) -> str:
+        lang = "en" if i18n.language == "en" else "ru"
         return """<!DOCTYPE html>
-<html lang="ru">
+<html lang="@@LANG@@">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#170F30">
-    <title>Доступ ограничен</title>
+    <title>@@TITLE@@</title>
     <style>
         body {
             margin: 0;
@@ -215,12 +219,37 @@ class TransferServer:
         <div class="icon" style="background: transparent;">
             <img src="data:image/png;base64,{{LOGO_BASE64}}" style="width: 64px; height: 64px; object-fit: contain;">
         </div>
-        <h2>Доступ закрыт</h2>
-        <p>Для передачи файлов откройте окно <b>«Мобильник»</b> в приложении V-Link на компьютере. Текущий токен устарел.</p>
-        <button class="btn" onclick="window.close()">Закрыть окно</button>
+        <h2>@@DENIED@@</h2>
+        <p>@@TEXT@@</p>
+        <button class="btn" onclick="window.close()">@@CLOSE@@</button>
     </div>
 </body>
-</html>""".replace("{{LOGO_BASE64}}", self._load_logo_base64())
+</html>""".replace("@@LANG@@", lang).replace("@@TITLE@@", t("Доступ ограничен")).replace(
+            "@@DENIED@@", t("Доступ закрыт")
+        ).replace(
+            "@@TEXT@@",
+            t("Для передачи файлов откройте окно «Мобильник» в приложении V-Link на компьютере. Текущий токен устарел."),
+        ).replace(
+            "@@CLOSE@@", t("Закрыть окно")
+        ).replace(
+            "{{LOGO_BASE64}}", self._load_logo_base64()
+        )
+
+    def _mobile_i18n_map(self) -> dict:
+        return {
+            "online": t("Онлайн"),
+            "uploadTitle": t("Отправить файлы"),
+            "uploadDesc": t("Нажмите для выбора фото или документов"),
+            "chooseFiles": t("Выбрать файлы"),
+            "filesOnPc": t("Файлы на ПК"),
+            "loadingList": t("Загрузка списка..."),
+            "emptyFolder": t("Папка загрузок пуста"),
+            "uploadSuccess": t("Файлы успешно отправлены"),
+            "uploadError": t("Ошибка загрузки"),
+            "networkError": t("Ошибка сети"),
+            "accessErrorTitle": t("Ошибка доступа"),
+            "accessErrorText": t("Отсканируйте QR-код заново в приложении V-Link."),
+        }
 
     def _load_mobile_html(self) -> str:
         if self._mobile_template_cache:
@@ -235,7 +264,13 @@ class TransferServer:
             try:
                 if path.exists():
                     raw = path.read_text(encoding="utf-8")
-                    self._mobile_template_cache = raw.replace("{{LOGO_BASE64}}", self._load_logo_base64())
+                    rendered = raw.replace("{{LOGO_BASE64}}", self._load_logo_base64())
+                    rendered = rendered.replace("{{HTML_LANG}}", "en" if i18n.language == "en" else "ru")
+                    rendered = rendered.replace(
+                        "{{I18N_JSON}}",
+                        json.dumps(self._mobile_i18n_map(), ensure_ascii=False),
+                    )
+                    self._mobile_template_cache = rendered
                     return self._mobile_template_cache
             except Exception:
                 continue
@@ -631,7 +666,11 @@ class TransferServer:
                     or "address already in use" in text
                 ):
                     self.on_server_error(
-                        f"Порт {try_port} недоступен: {last_bind_error}. Поиск следующего порта..."
+                        t(
+                            "Порт {port} недоступен: {error}. Поиск следующего порта...",
+                            port=try_port,
+                            error=last_bind_error,
+                        )
                     )
             return False
 
