@@ -2,6 +2,31 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [2.3.2] - 2026-05-13
+### Mobile connectivity
+* Removed the alternate-address selector from the phone connection dialog.
+* Mobile web server now prefers physical LAN interfaces and skips VPN/virtual adapters before fallback binding.
+* Added a local LAN self-check with a clear warning when the PC VPN/firewall blocks the phone URL.
+
+## [2.3.1] - 2026-05-13
+### Mobile connectivity
+* Mobile connection dialog now offers all detected PC local addresses and regenerates the QR code when another address is selected.
+* Improved mobile address selection for LAN + VPN setups by preferring Wi-Fi/Ethernet interfaces over VPN interfaces.
+* Added VPN/local-network access guidance to the phone connection dialog.
+
+## [2.3.0] - 2026-05-12
+### Transfer fixes
+* Fixed direct desktop-to-desktop upload regression after folder-transfer changes.
+* Added folder transfer without archiving from desktop and mobile web, preserving relative paths.
+* Added a detailed confirmation dialog for desktop folder transfers.
+* Improved transfer progress display with live transferred/total size.
+* Improved mobile web upload progress and recursive file listing/downloads.
+
+### Network & security
+* Secure mode now uses a per-install shared key instead of a public hardcoded secret.
+* Relay transport preserves folder paths and sanitizes relay channel names.
+* Improved LAN-vs-VPN IP prioritization for mixed local network/VPN environments.
+
 ## [2.2.0] - 2026-02-15
 ### 🌍 Localization (i18n)
 * **Full Support**: Added complete English and Russian localization for Desktop UI and Web Interface.

@@ -60,6 +60,28 @@ def _safe_name(name: str, fallback: str) -> str:
     return stripped if stripped else fallback
 
 
+def _safe_channel(channel: str) -> str:
+    clean = []
+    for ch in (channel or "default").strip():
+        if ch.isalnum() or ch in ("-", "_", "."):
+            clean.append(ch)
+        else:
+            clean.append("_")
+    value = "".join(clean).strip("._-")
+    return value or "default"
+
+
+def _safe_relative_path(path: str, fallback: str = "relay_file.bin") -> str:
+    clean_parts = []
+    for part in str(path or "").replace("\\", "/").split("/"):
+        part = part.strip()
+        if part and part not in {".", ".."} and not part.endswith(":"):
+            clean_parts.append(part)
+    if not clean_parts:
+        return fallback
+    return os.path.join(*clean_parts).replace("\\", "/")
+
+
 def _message_view(message: Dict) -> Dict:
     return {
         "id": message["id"],
@@ -132,7 +154,7 @@ async def presence(request: web.Request) -> web.Response:
     app = request.app
     body = await request.json()
 
-    channel = _safe_name(str(body.get("channel", "")).strip(), "default")
+    channel = _safe_channel(str(body.get("channel", "")).strip())
     client_id = str(body.get("client_id", "")).strip()
     name = _safe_name(str(body.get("name", "")).strip(), client_id or "unknown")
     secure_mode = bool(body.get("secure_mode", False))
@@ -173,11 +195,11 @@ async def presence(request: web.Request) -> web.Response:
 async def upload(request: web.Request) -> web.Response:
     app = request.app
 
-    channel = _safe_name(request.headers.get("X-Channel", "").strip(), "default")
+    channel = _safe_channel(request.headers.get("X-Channel", "").strip())
     from_id = request.headers.get("X-Client-ID", "").strip()
     target_id = request.headers.get("X-Target-ID", "").strip()
     transfer_id = request.headers.get("X-Transfer-ID", "").strip() or str(uuid.uuid4())[:8]
-    filename = _decode_b64(request.headers.get("X-Filename-B64", ""), "relay_file.bin")
+    filename = _safe_relative_path(_decode_b64(request.headers.get("X-Filename-B64", ""), "relay_file.bin"))
     from_name = _decode_b64(request.headers.get("X-Sender-Name-B64", ""), from_id or "unknown")
     secure_mode = request.headers.get("X-Secure-Mode", "0").strip() == "1"
     encrypted = request.headers.get("X-Encrypted", "none").strip().lower()
@@ -230,7 +252,7 @@ async def upload(request: web.Request) -> web.Response:
             "from_name": from_name,
             "target_id": target_id,
             "transfer_id": transfer_id,
-            "filename": os.path.basename(filename) or "relay_file.bin",
+            "filename": filename,
             "size": expected_size if expected_size > 0 else written,
             "stored_size": written,
             "secure_mode": secure_mode,
@@ -245,7 +267,7 @@ async def upload(request: web.Request) -> web.Response:
 
 async def inbox(request: web.Request) -> web.Response:
     app = request.app
-    channel = _safe_name(request.query.get("channel", "").strip(), "default")
+    channel = _safe_channel(request.query.get("channel", "").strip())
     client_id = request.query.get("client_id", "").strip()
     if not client_id:
         return web.json_response({"status": "error", "message": "client_id is required"}, status=400)

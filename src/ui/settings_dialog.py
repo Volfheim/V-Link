@@ -200,12 +200,23 @@ class SettingsDialog(QDialog):
         security_layout.setSpacing(8)
 
         self.secure_mode_check = CheckBoxWithMark(t("Безопасный режим передачи (медленнее, но надёжнее)"))
+        self.secure_mode_check.toggled.connect(self._toggle_secure_fields)
         security_layout.addWidget(self.secure_mode_check)
+
+        secure_key_row = QHBoxLayout()
+        secure_key_label = QLabel(t("Ключ безопасного режима:"))
+        secure_key_label.setMinimumWidth(180)
+        secure_key_row.addWidget(secure_key_label)
+        self.secure_key_edit = QLineEdit()
+        self.secure_key_edit.setPlaceholderText(t("Одинаковый ключ на обоих устройствах"))
+        self.secure_key_edit.setToolTip(t("Скопируйте этот ключ на второе устройство, если включаете безопасный режим"))
+        secure_key_row.addWidget(self.secure_key_edit)
+        security_layout.addLayout(secure_key_row)
 
         secure_hint = QLabel(
             t(
-                "Включает проверку целостности и подтверждение между устройствами. "
-                "Может немного снижать скорость, особенно на больших файлах."
+                "Включает шифрование потока, проверку целостности и общий ключ между устройствами. "
+                "Для передачи ключ должен совпадать на обоих ПК."
             )
         )
         secure_hint.setWordWrap(True)
@@ -339,6 +350,7 @@ class SettingsDialog(QDialog):
         self.port_spin.setValue(self.settings.get('port', 8765))
         self.download_edit.setText(self.settings.get('download_dir', ''))
         self.secure_mode_check.setChecked(self.settings.get('secure_mode', False))
+        self.secure_key_edit.setText(self.settings.get('secure_shared_secret', ''))
         self.nonstandard_network_check.setChecked(self.settings.get('nonstandard_network_mode', True))
         self.relay_mode_check.setChecked(self.settings.get('relay_mode', False))
         self.relay_url_edit.setText(self.settings.get('relay_server_url', ''))
@@ -352,11 +364,15 @@ class SettingsDialog(QDialog):
         self.clipboard_sync_check.setChecked(self.settings.get('clipboard_sync_enabled', True))
         self.clipboard_image_check.setChecked(self.settings.get('clipboard_sync_images', False))
         self._toggle_relay_fields(self.relay_mode_check.isChecked())
+        self._toggle_secure_fields(self.secure_mode_check.isChecked())
         self._toggle_clipboard_options(self.clipboard_sync_check.isChecked())
 
     def _toggle_relay_fields(self, enabled: bool):
         self.relay_url_edit.setEnabled(enabled)
         self.relay_channel_edit.setEnabled(enabled)
+
+    def _toggle_secure_fields(self, enabled: bool):
+        self.secure_key_edit.setEnabled(enabled)
 
     def _toggle_clipboard_options(self, enabled: bool):
         self.clipboard_image_check.setEnabled(enabled)
@@ -364,6 +380,9 @@ class SettingsDialog(QDialog):
     def _save_and_close(self):
         relay_url = self.relay_url_edit.text().strip()
         relay_channel = self.relay_channel_edit.text().strip() or "default"
+        secure_secret = self.secure_key_edit.text().strip()
+        if self.secure_mode_check.isChecked() and not secure_secret:
+            secure_secret = self.settings.ensure_secure_shared_secret()
         if self.relay_mode_check.isChecked() and not relay_url:
             QMessageBox.warning(
                 self,
@@ -376,6 +395,7 @@ class SettingsDialog(QDialog):
             'port': self.port_spin.value(),
             'download_dir': self.download_edit.text(),
             'secure_mode': self.secure_mode_check.isChecked(),
+            'secure_shared_secret': secure_secret,
             'nonstandard_network_mode': self.nonstandard_network_check.isChecked(),
             'relay_mode': self.relay_mode_check.isChecked(),
             'relay_server_url': relay_url,

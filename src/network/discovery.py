@@ -59,6 +59,7 @@ class DeviceDiscovery:
         "nordlynx",
         "forti",
         "anyconnect",
+        "windscribe",
     )
 
     def __init__(self, port: int = 8765, compatibility_mode: bool = False):
@@ -147,7 +148,7 @@ class DeviceDiscovery:
                 if not line:
                     continue
                 stripped = line.strip()
-                if stripped.endswith(":") and (not raw[:1].isspace()):
+                if stripped.endswith(":") and "." not in stripped:
                     current_iface = stripped[:-1]
                     continue
                 if "IPv4" not in line or ":" not in line:
@@ -720,38 +721,53 @@ class DeviceDiscovery:
     def _rank_candidate_ips(self, ips: List[str]) -> List[str]:
         local_ips = self.get_local_ips()
 
-        def in_same_subnet(candidate: str) -> bool:
+        def local_iface_rank(local_ip: str) -> int:
+            if self._is_hotspot_ip(local_ip):
+                return 0
+            if local_ip.startswith("192.168."):
+                return 1
+            if local_ip.startswith("10."):
+                return 2
+            if local_ip.startswith("172."):
+                return 3
+            if self._is_private_ip(local_ip):
+                return 4
+            return 5
+
+        def same_subnet_rank(candidate: str) -> Optional[int]:
             try:
                 caddr = ipaddress.ip_address(candidate)
             except ValueError:
-                return False
+                return None
+            ranks = []
             for lip in local_ips:
                 try:
                     network = ipaddress.ip_network(f"{lip}/24", strict=False)
                     if caddr in network:
-                        return True
+                        ranks.append(local_iface_rank(lip))
                 except ValueError:
                     continue
-            return False
+            return min(ranks) if ranks else None
 
         # Ranking:
-        # 1) Same /24 subnet as any local interface (best for LAN/VPN mixed setups)
+        # 1) Same /24 subnet as a preferred local interface (LAN before VPN-like ranges)
         # 2) Home/private blocks by preference
         # 3) Public/other
         def score(ip: str) -> tuple[int, str]:
-            if in_same_subnet(ip):
-                return (0, ip)
+            subnet_rank = same_subnet_rank(ip)
+            if subnet_rank is not None:
+                return (subnet_rank, ip)
             if self._is_hotspot_ip(ip):
-                return (1, ip)
+                return (6, ip)
             if ip.startswith("192.168."):
-                return (2, ip)
+                return (7, ip)
             if ip.startswith("10."):
-                return (3, ip)
+                return (8, ip)
             if ip.startswith("172."):
-                return (4, ip)
+                return (9, ip)
             if self._is_private_ip(ip):
-                return (5, ip)
-            return (6, ip)
+                return (10, ip)
+            return (11, ip)
 
         return sorted(ips, key=score)
 

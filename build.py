@@ -64,6 +64,12 @@ def build():
         "PIL.Image",
         "--exclude-module",
         "numpy",
+        "--exclude-module",
+        "PySide6",
+        "--exclude-module",
+        "PySide2",
+        "--exclude-module",
+        "PyQt5",
         "src/main.py",
     ]
 

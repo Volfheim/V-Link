@@ -154,14 +154,8 @@
             margin-right: 8px;
         }
 
-        #fileInput {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            opacity: 0;
-            cursor: pointer;
+        #fileInput, #dirInput {
+            display: none;
         }
 
         /* --- Files List --- */
@@ -319,6 +313,32 @@
             box-shadow: 0 0 10px var(--success);
         }
 
+        .upload-detail {
+            margin-top: 16px;
+            padding: 14px;
+            border-radius: 14px;
+            background: rgba(15, 23, 42, 0.55);
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+
+        .upload-detail.hidden {
+            display: none;
+        }
+
+        .upload-detail-title {
+            font-weight: 700;
+            font-size: 14px;
+            margin-bottom: 6px;
+        }
+
+        .upload-detail-meta,
+        .upload-detail-bytes {
+            color: var(--text-secondary);
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
         /* Utilities */
         .empty-state {
             text-align: center;
@@ -354,15 +374,29 @@
             </div>
             <div class="upload-title" id="uploadTitle">Upload files</div>
             <div class="upload-desc" id="uploadDesc">Tap to choose files</div>
-            <button class="btn" id="chooseFilesBtn">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-                <span id="chooseFilesText">Choose files</span>
-            </button>
+            <div style="display: flex; gap: 10px; margin-top: 16px;">
+                <button class="btn" id="chooseFilesBtn" style="flex: 1; font-size: 14px; padding: 12px 10px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+                        <polyline points="13 2 13 9 20 9"></polyline>
+                    </svg>
+                    <span id="chooseFilesText">Files</span>
+                </button>
+                <button class="btn" id="chooseFolderBtn" style="flex: 1; background: #0ea5e9; font-size: 14px; padding: 12px 10px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <span id="chooseFolderText">Folder</span>
+                </button>
+            </div>
             <input type="file" id="fileInput" multiple>
+            <input type="file" id="dirInput" webkitdirectory directory multiple>
+            <div class="upload-detail hidden" id="uploadDetail">
+                <div class="upload-detail-title" id="uploadDetailTitle">Uploading...</div>
+                <div class="upload-detail-meta" id="uploadDetailMeta"></div>
+                <div class="upload-detail-bytes" id="uploadDetailBytes"></div>
+            </div>
         </div>
 
         <!-- Files List -->
@@ -403,9 +437,16 @@
 
         const dom = {
             fileInput: document.getElementById('fileInput'),
+            dirInput: document.getElementById('dirInput'),
+            chooseFilesBtn: document.getElementById('chooseFilesBtn'),
+            chooseFolderBtn: document.getElementById('chooseFolderBtn'),
             fileList: document.getElementById('fileList'),
             refreshBtn: document.getElementById('refreshBtn'),
             progressBar: document.getElementById('progressBar'),
+            uploadDetail: document.getElementById('uploadDetail'),
+            uploadDetailTitle: document.getElementById('uploadDetailTitle'),
+            uploadDetailMeta: document.getElementById('uploadDetailMeta'),
+            uploadDetailBytes: document.getElementById('uploadDetailBytes'),
             toastContainer: document.getElementById('toastContainer')
         };
 
@@ -413,13 +454,14 @@
         document.getElementById('statusBadge').textContent = tr('online', 'Online');
         document.getElementById('uploadTitle').textContent = tr('uploadTitle', 'Upload files');
         document.getElementById('uploadDesc').textContent = tr('uploadDesc', 'Tap to choose files');
-        document.getElementById('chooseFilesText').textContent = tr('chooseFiles', 'Choose files');
+        document.getElementById('chooseFilesText').textContent = tr('chooseFiles', 'Files');
+        if (document.getElementById('chooseFolderText')) document.getElementById('chooseFolderText').textContent = tr('chooseFolder', 'Folder');
         document.getElementById('filesOnPcTitle').textContent = tr('filesOnPc', 'Files on PC');
         document.getElementById('listLoadingText').textContent = tr('loadingList', 'Loading list...');
 
         // --- Utils ---
         function humanSize(bytes) {
-            const units = ['B', 'KB', 'MB', 'GB'];
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
             let size = bytes;
             let i = 0;
             while (size >= 1024 && i < units.length - 1) {
@@ -429,10 +471,20 @@
             return `${size.toFixed(1)} ${units[i]}`;
         }
 
+        function escapeHtml(value) {
+            return String(value || '').replace(/[&<>"']/g, (ch) => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[ch]));
+        }
+
         function showToast(msg, type = 'info') {
             const toast = document.createElement('div');
             toast.className = `toast ${type}`;
-            toast.innerHTML = msg;
+            toast.textContent = msg;
             dom.toastContainer.appendChild(toast);
 
             // Remove after 3s
@@ -482,13 +534,16 @@
                 return;
             }
 
-            dom.fileList.innerHTML = files.map(f => `
-                <a href="/api/mobile/download/${encodeURIComponent(f.name)}?token=${encodeURIComponent(TOKEN)}" class="file-card" download>
+            dom.fileList.innerHTML = files.map(f => {
+                const safeName = escapeHtml(f.name);
+                const href = `/api/mobile/download/${encodeURIComponent(f.name)}?token=${encodeURIComponent(TOKEN)}`;
+                return `
+                <a href="${href}" class="file-card" download>
                     <div class="file-icon">
                         ${getFileIcon(f.name)}
                     </div>
                     <div class="file-info">
-                        <div class="file-name">${f.name}</div>
+                        <div class="file-name" title="${safeName}">${safeName}</div>
                         <div class="file-meta">${humanSize(f.size)} • ${new Date(f.mtime * 1000).toLocaleDateString()}</div>
                     </div>
                     <div class="download-icon">
@@ -499,42 +554,71 @@
                         </svg>
                     </div>
                 </a>
-            `).join('');
+            `}).join('');
         }
 
         async function uploadFiles(e) {
-            const files = e.target.files;
+            const files = Array.from(e.target.files || []);
             if (!files.length) return;
 
+            const totalBytes = files.reduce((sum, file) => sum + (file.size || 0), 0);
+            const firstRel = files[0].webkitRelativePath || files[0].name || '';
+            const rootName = firstRel.includes('/') ? firstRel.split('/')[0] : '';
+            const uploadName = rootName || (files.length === 1 ? files[0].name : 'mobile-upload');
+
             const formData = new FormData();
-            for (let i = 0; i < files.length; i++) {
-                formData.append('file', files[i]);
+            for (const file of files) {
+                const relPath = file.webkitRelativePath || file.name;
+                formData.append('file', file, relPath);
             }
 
             const xhr = new XMLHttpRequest();
             xhr.open('POST', `/api/mobile/upload?token=${encodeURIComponent(TOKEN)}`, true);
+            xhr.setRequestHeader('X-Upload-Total-Size', String(totalBytes));
+            xhr.setRequestHeader('X-Upload-File-Count', String(files.length));
+            xhr.setRequestHeader('X-Upload-Name', encodeURIComponent(uploadName));
+
+            dom.uploadDetail.classList.remove('hidden');
+            dom.uploadDetailTitle.textContent = tr('uploading', 'Uploading...');
+            dom.uploadDetailMeta.textContent = rootName
+                ? `${tr('selectedFolder', 'Folder: {name}').replace('{name}', rootName)} • ${tr('selectedFiles', 'Files: {count}').replace('{count}', files.length)}`
+                : tr('selectedFiles', 'Files: {count}').replace('{count}', files.length);
+            dom.uploadDetailBytes.textContent = tr('uploadBytes', '{sent} of {total}')
+                .replace('{sent}', humanSize(0))
+                .replace('{total}', humanSize(totalBytes));
 
             xhr.upload.onprogress = (e) => {
                 if (e.lengthComputable) {
                     const percent = (e.loaded / e.total) * 100;
                     dom.progressBar.style.width = percent + '%';
+                    const sent = totalBytes > 0 ? Math.min(totalBytes, e.loaded) : e.loaded;
+                    dom.uploadDetailBytes.textContent = tr('uploadBytes', '{sent} of {total}')
+                        .replace('{sent}', humanSize(sent))
+                        .replace('{total}', humanSize(totalBytes || e.total));
                 }
             };
 
             xhr.onload = () => {
                 dom.progressBar.style.width = '0%';
                 if (xhr.status === 200) {
+                    dom.uploadDetailTitle.textContent = tr('uploadComplete', 'Done');
+                    dom.uploadDetailBytes.textContent = tr('uploadBytes', '{sent} of {total}')
+                        .replace('{sent}', humanSize(totalBytes))
+                        .replace('{total}', humanSize(totalBytes));
                     showToast(tr('uploadSuccess', 'Files uploaded successfully'), 'success');
                     fetchFiles();
                 } else {
                     showToast(tr('uploadError', 'Upload error'), 'error');
+                    dom.uploadDetail.classList.add('hidden');
                 }
-                dom.fileInput.value = ''; // Reset input
+                dom.fileInput.value = '';
+                if (dom.dirInput) dom.dirInput.value = '';
             };
 
             xhr.onerror = () => {
                 showToast(tr('networkError', 'Network error'), 'error');
                 dom.progressBar.style.width = '0%';
+                dom.uploadDetail.classList.add('hidden');
             };
 
             xhr.send(formData);
@@ -549,7 +633,11 @@
                 </div>
             `;
         } else {
+            if (dom.chooseFilesBtn) dom.chooseFilesBtn.addEventListener('click', () => dom.fileInput.click());
+            if (dom.chooseFolderBtn) dom.chooseFolderBtn.addEventListener('click', () => dom.dirInput.click());
             dom.fileInput.addEventListener('change', uploadFiles);
+            if (dom.dirInput) dom.dirInput.addEventListener('change', uploadFiles);
+            
             dom.refreshBtn.addEventListener('click', () => {
                 dom.refreshBtn.style.transform = 'rotate(360deg)';
                 setTimeout(() => dom.refreshBtn.style.transform = 'none', 500);

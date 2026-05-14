@@ -261,14 +261,21 @@ class RelayClient:
         messages = data.get("messages", [])
         return messages if isinstance(messages, list) else []
 
-    async def send_files(self, filepaths: List[str], target_peer_id: str, target_name: str = ""):
-        for filepath in filepaths:
-            await self.send_file(filepath, target_peer_id, target_name=target_name)
+    async def send_files(self, files: List[str | tuple[str, str]], target_peer_id: str, target_name: str = ""):
+        normalized = []
+        for item in files:
+            if isinstance(item, tuple):
+                normalized.append(item)
+            else:
+                normalized.append((item, os.path.basename(item)))
 
-    async def send_file(self, filepath: str, target_peer_id: str, target_name: str = "") -> str:
+        for filepath, rel_path in normalized:
+            await self.send_file(filepath, target_peer_id, target_name=target_name, target_rel_path=rel_path)
+
+    async def send_file(self, filepath: str, target_peer_id: str, target_name: str = "", target_rel_path: str = "") -> str:
         await self._ensure_session()
         transfer_id = str(uuid.uuid4())[:8]
-        filename = os.path.basename(filepath)
+        filename = target_rel_path if target_rel_path else os.path.basename(filepath)
 
         if not os.path.exists(filepath):
             error = f"File not found: {filepath}"
@@ -287,9 +294,10 @@ class RelayClient:
         if self.on_transfer_start:
             self.on_transfer_start(transfer_id, filename, total_size, True)
 
+        started = time.time()
+
         async def file_sender():
             sent = 0
-            started = time.time()
             last_update = started
 
             async with aiofiles.open(filepath, "rb") as f:
@@ -344,13 +352,18 @@ class RelayClient:
             await resp.read()
 
         if self.on_transfer_complete:
+            if self.on_transfer_progress:
+                # Keep the UI at exact file size even when the last chunk was too fast
+                # to trigger an intermediate progress callback.
+                elapsed = max(0.001, time.time() - started)
+                self.on_transfer_progress(transfer_id, total_size, total_size / elapsed)
             self.on_transfer_complete(transfer_id, filepath)
         return transfer_id
 
     async def _receive_message(self, message: Dict):
         msg_id = str(message.get("id", "")).strip()
         transfer_id = str(message.get("transfer_id", "")).strip() or str(uuid.uuid4())[:8]
-        filename = self._safe_filename(str(message.get("filename", "")).strip() or "relay_file.bin")
+        filename = self._safe_relative_path(str(message.get("filename", "")).strip() or "relay_file.bin")
         expected_size = int(message.get("size", 0) or 0)
         secure_required = bool(message.get("secure_mode", False))
         encrypted = str(message.get("encrypted", "")).strip().lower() == "fernet-frame"
@@ -379,6 +392,7 @@ class RelayClient:
 
         try:
             os.makedirs(self.download_dir, exist_ok=True)
+            os.makedirs(os.path.dirname(destination), exist_ok=True)
             await self._ensure_session()
 
             params = {"client_id": self.client_id}
@@ -433,6 +447,9 @@ class RelayClient:
                 raise ValueError(f"Relay size mismatch: expected {expected_size}, got {received}")
 
             await self._ack(msg_id, "ok", "")
+            if self.on_transfer_progress:
+                elapsed = max(0.001, time.time() - started)
+                self.on_transfer_progress(transfer_id, received, received / elapsed)
             if self.on_transfer_complete:
                 self.on_transfer_complete(transfer_id, destination)
         except Exception as e:
@@ -467,11 +484,15 @@ class RelayClient:
         except Exception:
             pass
 
-    def _safe_filename(self, filename: str) -> str:
-        name = os.path.basename((filename or "").strip())
-        if not name or name in {".", ".."}:
+    def _safe_relative_path(self, path: str) -> str:
+        clean_parts = []
+        for part in path.replace("\\", "/").split("/"):
+            part = part.strip()
+            if part and part not in {".", ".."} and not part.endswith(":"):
+                clean_parts.append(part)
+        if not clean_parts:
             return "relay_file.bin"
-        return name
+        return os.path.join(*clean_parts)
 
     def _unique_path(self, filename: str) -> str:
         base_path = os.path.join(self.download_dir, filename)

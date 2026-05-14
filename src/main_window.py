@@ -32,11 +32,8 @@ from core import Settings, Updater, i18n, set_autostart, t
 from core.clipboard_sync import ClipboardSyncManager
 from version import __version__
 from network import DeviceDiscovery, RelayClient, TransferClient, TransferServer
-from ui import DeviceList, DropZone, TransferList, get_stylesheet
+from ui import DeviceList, DropZone, TransferList, TransferSummaryDialog, get_stylesheet
 from ui.settings_dialog import SettingsDialog
-
-SECURE_SHARED_SECRET = "vlink-secure-mode-v1"
-
 
 class MainWindow(QMainWindow):
     """Main window for V-Link."""
@@ -339,15 +336,90 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "V-Link", t("Не удалось открыть папку:\n{folder}", folder=folder))
 
     def _best_mobile_ip(self) -> str:
+        try:
+            ips = TransferServer._physical_lan_ips()
+            if ips:
+                return ips[0]
+        except Exception:
+            pass
+
+        ips = self._mobile_ip_candidates()
+        return ips[0] if ips else "127.0.0.1"
+
+    @staticmethod
+    def _probe_local_lan_endpoint(host: str, port: int) -> Optional[str]:
+        host = str(host or "").strip()
+        if not host or host.startswith("127."):
+            return None
+        try:
+            with socket.create_connection((host, int(port)), timeout=0.8):
+                return None
+        except OSError as e:
+            return str(e)
+
+    @staticmethod
+    def _mobile_iface_score(iface_name: str, ip: str) -> tuple[int, int, str]:
+        name = str(iface_name or "").lower()
+        ip = str(ip or "").strip()
+        vpn_penalty = 10 if DeviceDiscovery._is_vpn_iface_name(name) else 0
+        lan_bonus = 0
+        lan_markers = (
+            "wi-fi",
+            "wifi",
+            "wireless",
+            "wlan",
+            "ethernet",
+            "local area",
+            "беспровод",
+            "локальная сеть",
+        )
+        if any(marker in name for marker in lan_markers):
+            lan_bonus = -2
+        if ip.startswith("192.168.137."):
+            block_rank = 0
+        elif ip.startswith("192.168."):
+            block_rank = 1
+        elif ip.startswith("10."):
+            block_rank = 2
+        elif ip.startswith("172."):
+            block_rank = 3
+        else:
+            block_rank = 4
+        return (vpn_penalty + lan_bonus, block_rank, ip)
+
+    def _mobile_ip_candidates(self) -> List[str]:
         if not self.discovery:
-            return "127.0.0.1"
-        ips = self.discovery.get_local_ips()
-        if not ips:
-            return "127.0.0.1"
-        for ip in ips:
-            if str(ip).startswith("192.168.") or str(ip).startswith("10.") or str(ip).startswith("172."):
-                return ip
-        return self.discovery.get_local_ip()
+            return []
+
+        fallback_ips = self.discovery.get_local_ips()
+        pairs = []
+        try:
+            pairs = DeviceDiscovery._windows_interface_ip_pairs(timeout_sec=1.8)
+        except Exception:
+            pairs = []
+
+        local_set = set(fallback_ips)
+        ranked: list[tuple[tuple[int, int, str], str]] = []
+        seen: set[str] = set()
+
+        for iface_name, ip in pairs:
+            ip = str(ip or "").strip()
+            if ip not in local_set or ip in seen:
+                continue
+            if not DeviceDiscovery._is_valid_local_ip_static(ip):
+                continue
+            seen.add(ip)
+            ranked.append((self._mobile_iface_score(iface_name, ip), ip))
+
+        for ip in fallback_ips:
+            ip = str(ip or "").strip()
+            if not ip or ip in seen:
+                continue
+            seen.add(ip)
+            ranked.append((self._mobile_iface_score("", ip), ip))
+
+        ranked.sort(key=lambda item: item[0])
+        return [ip for _score, ip in ranked]
 
     def _open_mobile_connect(self):
         from ui.mobile_connect_dialog import MobileConnectDialog
@@ -366,7 +438,25 @@ class MainWindow(QMainWindow):
             return
 
         token = self.server.enable_mobile_share(ttl_sec=0)
-        url = self.server.get_mobile_url(self._best_mobile_ip())
+        host_ip = self._best_mobile_ip()
+        url = self.server.get_mobile_url(host_ip)
+
+        probe_error = self._probe_local_lan_endpoint(host_ip, self.server.port)
+        if probe_error:
+            QMessageBox.warning(
+                self,
+                "V-Link",
+                t(
+                    "ПК сейчас сам не может открыть свой LAN-адрес:\n"
+                    "{url}\n\n"
+                    "Скорее всего, VPN или его firewall на ПК блокирует локальную сеть.\n"
+                    "Включите в VPN параметр Allow LAN traffic / Разрешить локальную сеть "
+                    "или временно отключите VPN-firewall, затем откройте это окно заново.\n\n"
+                    "Ошибка проверки: {error}",
+                    url=url,
+                    error=probe_error,
+                ),
+            )
 
         dialog = MobileConnectDialog(url=url, token=token, parent=self)
         dialog.finished.connect(self._on_mobile_dialog_closed)
@@ -693,7 +783,7 @@ class MainWindow(QMainWindow):
             self._effective_nonstandard_mode = compatibility_mode
             relay_mode = self.settings.relay_mode
             relay_url = self.settings.relay_server_url
-            auth_secret = SECURE_SHARED_SECRET if secure_mode else ""
+            auth_secret = self.settings.secure_shared_secret if secure_mode else ""
             verify_checksum = secure_mode
             requested_port = int(self.settings.port)
 
@@ -993,6 +1083,40 @@ class MainWindow(QMainWindow):
             return ip.split(":", 1)[1].strip() or None
         return None
 
+    def _collect_transfer_files(self, paths: List[str]) -> tuple[list[tuple[str, str]], int]:
+        valid_files: list[tuple[str, str]] = []
+        folder_count = 0
+        seen: set[str] = set()
+
+        for item in paths:
+            if not os.path.exists(item):
+                continue
+            if os.path.isfile(item):
+                key = os.path.abspath(item)
+                if key not in seen:
+                    seen.add(key)
+                    valid_files.append((item, os.path.basename(item)))
+                continue
+
+            if not os.path.isdir(item):
+                continue
+
+            folder_count += 1
+            base_dir = os.path.dirname(item)
+            for root, _dirs, filenames in os.walk(item):
+                for filename in filenames:
+                    filepath = os.path.join(root, filename)
+                    if not os.path.isfile(filepath):
+                        continue
+                    key = os.path.abspath(filepath)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    rel_path = os.path.relpath(filepath, start=base_dir).replace("\\", "/")
+                    valid_files.append((filepath, rel_path))
+
+        return valid_files, folder_count
+
     @pyqtSlot(str, str, int)
     def _on_device_selected(self, name: str, ip: str, port: int):
         self.selected_device = (name, ip, port)
@@ -1026,24 +1150,26 @@ class MainWindow(QMainWindow):
             QMetaObject.invokeMethod(self, "_show_services_starting", Qt.ConnectionType.QueuedConnection)
             return
 
-            if not self.selected_device:
-                fallback_selected = self.device_list.get_selected_device()
-                if fallback_selected:
-                    self.selected_device = fallback_selected
-                else:
-                    QMessageBox.information(self, "V-Link", t("Сначала выберите устройство из списка"))
-                    return
-
         if not self.selected_device:
-            QMessageBox.information(self, "V-Link", t("Сначала выберите устройство из списка"))
-            return
+            fallback_selected = self.device_list.get_selected_device()
+            if fallback_selected:
+                self.selected_device = fallback_selected
+            else:
+                QMessageBox.information(self, "V-Link", t("Сначала выберите устройство из списка"))
+                return
 
-        valid_files = [f for f in files if os.path.exists(f)]
+        valid_files, folder_count = self._collect_transfer_files(files)
+
         if not valid_files:
             QMessageBox.warning(self, "V-Link", t("Файлы не найдены"))
             return
 
         name, ip, port = self.selected_device
+
+        if folder_count > 0:
+            dialog = TransferSummaryDialog(name, valid_files, folder_count, parent=self)
+            if dialog.exec() != dialog.DialogCode.Accepted:
+                return
 
         async def send_with_ping():
             relay_peer_id = self._relay_peer_from_selection()
@@ -1273,7 +1399,8 @@ class MainWindow(QMainWindow):
             "V-Link",
             t(
                 "Передача отклонена из-за несовпадения Безопасного режима.\n\n"
-                "Проверьте, что на обоих устройствах этот режим либо включен, либо выключен."
+                "Проверьте, что на обоих устройствах этот режим либо включен, либо выключен, "
+                "и что ключ безопасного режима одинаковый."
             ),
         )
 

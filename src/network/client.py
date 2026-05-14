@@ -126,11 +126,13 @@ class TransferClient:
         port: int,
         plan: Optional[TransferPlan] = None,
         target_name: str = "",
+        target_rel_path: str = "",
     ) -> str:
         await self._ensure_session()
 
         transfer_id = str(uuid.uuid4())[:8]
         filename = os.path.basename(filepath)
+        display_name = target_rel_path if target_rel_path else filename
 
         if not os.path.exists(filepath):
             error = f"File not found: {filepath}"
@@ -142,7 +144,7 @@ class TransferClient:
         use_plan = plan or TransferPlan(self.base_chunk_size_bytes, 1, False)
 
         if self.on_transfer_start:
-            self.on_transfer_start(transfer_id, filename, total_size, True)
+            self.on_transfer_start(transfer_id, display_name, total_size, True)
 
         last_error = None
 
@@ -157,6 +159,7 @@ class TransferClient:
                     port,
                     use_plan,
                     target_name=target_name,
+                    target_rel_path=target_rel_path,
                 )
                 self._learn_from_transfer(total_size, elapsed, use_plan)
                 return result_id
@@ -189,6 +192,7 @@ class TransferClient:
         port: int,
         plan: TransferPlan,
         target_name: str = "",
+        target_rel_path: str = "",
     ) -> tuple[str, float]:
         file_hash = await self._hash_file(filepath, plan.chunk_size) if self.verify_checksum else None
         start_time = time.time()
@@ -238,12 +242,18 @@ class TransferClient:
                     else:
                         yield tail
 
+        import urllib.parse
+        encoded_filename = urllib.parse.quote(filename.encode('utf-8'))
+        
         headers = {
-            'X-Filename': filename,
+            'X-Filename': encoded_filename,
             'X-Filesize': str(total_size),
             'X-Transfer-ID': transfer_id,
             'Content-Type': 'application/octet-stream',
         }
+        if target_rel_path:
+            headers['X-Relative-Path'] = urllib.parse.quote(target_rel_path.encode('utf-8'))
+            
         if plan.use_lz4:
             headers['X-Content-Encoding'] = 'lz4-stream'
         if self._cipher:
@@ -266,6 +276,9 @@ class TransferClient:
 
         async with self.session.post(url, data=file_sender(), headers=headers, timeout=request_timeout) as resp:
             if resp.status == 200:
+                if self.on_transfer_progress:
+                    elapsed = max(0.001, time.time() - start_time)
+                    self.on_transfer_progress(transfer_id, total_size, total_size / elapsed)
                 if self.on_transfer_complete:
                     self.on_transfer_complete(transfer_id, filepath)
                 return transfer_id, max(0.001, time.time() - start_time)
@@ -278,21 +291,29 @@ class TransferClient:
                 message=error,
             )
 
-    async def send_files(self, filepaths: List[str], host: str, port: int, target_name: str = ""):
-        plan = await self._build_plan(filepaths)
+    async def send_files(self, files: List[str | tuple[str, str]], host: str, port: int, target_name: str = ""):
+        normalized_files = []
+        for item in files:
+            if isinstance(item, tuple):
+                normalized_files.append(item)
+            else:
+                normalized_files.append((item, os.path.basename(item)))
+
+        abs_paths = [p for p, _ in normalized_files]
+        plan = await self._build_plan(abs_paths)
 
         if plan.parallel_uploads <= 1:
-            for filepath in filepaths:
-                await self.send_file(filepath, host, port, plan=plan, target_name=target_name)
+            for filepath, rel_path in normalized_files:
+                await self.send_file(filepath, host, port, plan=plan, target_name=target_name, target_rel_path=rel_path)
             return
 
         sem = asyncio.Semaphore(plan.parallel_uploads)
 
-        async def send_one(path: str):
+        async def send_one(path: str, rel: str):
             async with sem:
-                await self.send_file(path, host, port, plan=plan, target_name=target_name)
+                await self.send_file(path, host, port, plan=plan, target_name=target_name, target_rel_path=rel)
 
-        await asyncio.gather(*(send_one(filepath) for filepath in filepaths))
+        await asyncio.gather(*(send_one(p, r) for p, r in normalized_files))
 
     async def _build_plan(self, filepaths: List[str]) -> TransferPlan:
         if not self.auto_tune:

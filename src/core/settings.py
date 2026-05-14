@@ -5,6 +5,7 @@ V-Link - Settings Manager
 
 import json
 import os
+import secrets
 import uuid
 from pathlib import Path
 from typing import Any, Dict
@@ -14,6 +15,7 @@ DEFAULT_SETTINGS = {
     'port': 8765,
     'download_dir': str(Path.home() / "Downloads" / "V-Link"),
     'secure_mode': False,
+    'secure_shared_secret': '',
     'nonstandard_network_mode': False,
     'relay_mode': False,
     'relay_server_url': '',
@@ -79,6 +81,16 @@ class Settings:
             return
         self.settings.update(values)
         self._save()
+
+    def ensure_secure_shared_secret(self) -> str:
+        """Return a persistent secure-mode shared secret, generating one if needed."""
+        current = str(self.get('secure_shared_secret', '') or '').strip()
+        if current:
+            return current
+        generated = secrets.token_urlsafe(18)
+        self.settings['secure_shared_secret'] = generated
+        self._save()
+        return generated
     
     @property
     def port(self) -> int:
@@ -95,6 +107,10 @@ class Settings:
     @property
     def secure_mode(self) -> bool:
         return bool(self.get('secure_mode', False))
+
+    @property
+    def secure_shared_secret(self) -> str:
+        return self.ensure_secure_shared_secret()
 
     @property
     def close_to_tray(self) -> bool:

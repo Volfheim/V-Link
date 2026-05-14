@@ -79,7 +79,7 @@ class TransferItem(QFrame):
 
         top_row.addStretch()
 
-        self.size_label = QLabel(self._format_size_only(self.total_size))
+        self.size_label = QLabel(self._format_progress_size(0, self.total_size))
         self.size_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
         top_row.addWidget(self.size_label)
 
@@ -131,6 +131,7 @@ class TransferItem(QFrame):
         self.transferred = transferred
         percent = int((transferred / self.total_size) * 100) if self.total_size > 0 else 0
         self.progress_bar.setValue(percent)
+        self.size_label.setText(self._format_progress_size(transferred, self.total_size))
         self.status_label.setText(self._format_speed(speed))
 
     def mark_complete(self):
@@ -140,7 +141,8 @@ class TransferItem(QFrame):
         elapsed = self.end_time - self.start_time
 
         self.progress_bar.setValue(100)
-        self.size_label.setText(self._format_size_only(self.total_size))
+        final_size = max(self.total_size, self.transferred)
+        self.size_label.setText(self._format_progress_size(final_size, final_size))
         self.time_label.setText(self._format_time(elapsed))
         self.status_label.setText("OK")
         self.status_label.setStyleSheet("color: #22c55e; font-size: 11px; font-weight: bold;")
@@ -153,7 +155,10 @@ class TransferItem(QFrame):
 
     def _show_in_explorer(self):
         if self.filepath and os.path.exists(self.filepath):
-            subprocess.run(['explorer', '/select,', self.filepath])
+            if os.path.isdir(self.filepath):
+                subprocess.run(['explorer', self.filepath])
+            else:
+                subprocess.run(['explorer', '/select,', self.filepath])
 
     def mark_error(self, error: str):
         self.timer.stop()
@@ -173,18 +178,29 @@ class TransferItem(QFrame):
 
     @staticmethod
     def _truncate_filename(filename: str, max_len: int) -> str:
-        name = os.path.basename(filename)
+        name = str(filename or "").replace("\\", "/")
+        if "/" not in name:
+            name = os.path.basename(name)
         if len(name) <= max_len:
             return name
         return name[: max_len - 3] + "..."
 
     @staticmethod
     def _format_size_only(size: int) -> str:
+        size = max(0, int(size or 0))
         for unit in ['B', 'KB', 'MB', 'GB']:
             if size < 1024:
                 return f"{size:.1f} {unit}"
             size /= 1024
         return f"{size:.1f} TB"
+
+    @classmethod
+    def _format_progress_size(cls, transferred: int, total: int) -> str:
+        transferred = max(0, int(transferred or 0))
+        total = max(0, int(total or 0))
+        if total > 0:
+            return f"{cls._format_size_only(transferred)} / {cls._format_size_only(total)}"
+        return cls._format_size_only(transferred)
 
     @staticmethod
     def _format_speed(speed: float) -> str:
