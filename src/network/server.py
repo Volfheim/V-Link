@@ -730,6 +730,207 @@ class TransferServer:
         )
         return response
 
+    async def _handle_mobile_browse(self, request: web.Request) -> web.Response:
+        token = self._extract_mobile_token(request)
+        if not self._mobile_token_valid(token):
+            return self._mobile_forbidden_json()
+
+        import urllib.parse
+        path_param = request.query.get("path", "")
+        try:
+            rel_path = self._safe_relative_path(urllib.parse.unquote(path_param))
+        except Exception:
+            rel_path = ""
+
+        root_dir = Path(self.download_dir)
+        target_dir = root_dir / rel_path if rel_path else root_dir
+
+        try:
+            target_abs = target_dir.resolve()
+            root_abs = root_dir.resolve()
+            if not str(target_abs).startswith(str(root_abs)):
+                return web.json_response({"status": "error", "message": "Access denied"}, status=403)
+        except Exception:
+            if ".." in rel_path or os.path.isabs(rel_path):
+                return web.json_response({"status": "error", "message": "Access denied"}, status=403)
+
+        if not target_dir.exists() or not target_dir.is_dir():
+            if target_dir == root_dir:
+                os.makedirs(root_dir, exist_ok=True)
+            else:
+                return web.json_response({"status": "error", "message": "Directory not found"}, status=404)
+
+        items = []
+        try:
+            for entry in target_dir.iterdir():
+                if entry.is_symlink():
+                    continue
+                stat = entry.stat()
+                name = entry.name
+                rel_item_path = entry.relative_to(root_dir).as_posix()
+
+                if entry.is_dir():
+                    try:
+                        children = [c for c in entry.iterdir() if not c.is_symlink()]
+                        children_count = len(children)
+                    except OSError:
+                        children_count = 0
+                    items.append({
+                        "name": name,
+                        "path": rel_item_path,
+                        "type": "dir",
+                        "size": 0,
+                        "mtime": int(stat.st_mtime),
+                        "children_count": children_count
+                    })
+                elif entry.is_file():
+                    items.append({
+                        "name": name,
+                        "path": rel_item_path,
+                        "type": "file",
+                        "size": int(stat.st_size),
+                        "mtime": int(stat.st_mtime)
+                    })
+        except OSError as e:
+            return web.json_response({"status": "error", "message": f"Read error: {e}"}, status=500)
+
+        dirs = sorted([x for x in items if x["type"] == "dir"], key=lambda x: x["name"].lower())
+        files = sorted([x for x in items if x["type"] == "file"], key=lambda x: x["name"].lower())
+        sorted_items = dirs + files
+
+        parent_path = None
+        if rel_path:
+            parent = Path(rel_path).parent.as_posix()
+            if parent == "." or not parent:
+                parent_path = ""
+            else:
+                parent_path = parent
+
+        return web.json_response({
+            "status": "ok",
+            "path": rel_path,
+            "items": sorted_items,
+            "parent": parent_path
+        })
+
+    async def _handle_mobile_download_folder(self, request: web.Request) -> web.StreamResponse:
+        token = self._extract_mobile_token(request)
+        if not self._mobile_token_valid(token):
+            return self._mobile_forbidden_json()
+
+        import urllib.parse
+        path_param = request.match_info.get("path", "")
+        try:
+            rel_path = self._safe_relative_path(urllib.parse.unquote(path_param))
+        except Exception:
+            return web.json_response({"status": "error", "message": "Invalid path"}, status=400)
+
+        root_dir = Path(self.download_dir)
+        target_dir = root_dir / rel_path if rel_path else root_dir
+
+        try:
+            target_abs = target_dir.resolve()
+            root_abs = root_dir.resolve()
+            if not str(target_abs).startswith(str(root_abs)):
+                return web.json_response({"status": "error", "message": "Access denied"}, status=403)
+        except Exception:
+            if ".." in rel_path or os.path.isabs(rel_path):
+                return web.json_response({"status": "error", "message": "Access denied"}, status=403)
+
+        if not target_dir.exists() or not target_dir.is_dir():
+            return web.json_response({"status": "error", "message": "Directory not found"}, status=404)
+
+        from network.zip_streamer import stream_folder_as_zip, estimate_folder_size
+
+        total_size, file_count = estimate_folder_size(target_dir)
+
+        # Ограничение в 4 ГБ для ZIP-скачивания через мобильный интерфейс
+        MAX_SIZE = 4 * 1024 * 1024 * 1024
+        if total_size > MAX_SIZE:
+            return web.json_response(
+                {"status": "error", "message": t("Папка слишком большая для скачивания (макс. 4 ГБ)")},
+                status=413
+            )
+
+        folder_name = target_dir.name or "download"
+        safe_name = folder_name.replace('"', "'")
+        quoted_name = urllib.parse.quote(safe_name)
+
+        response = web.StreamResponse(
+            status=200,
+            reason='OK',
+            headers={
+                'Content-Type': 'application/zip',
+                'Content-Disposition': f'attachment; filename="{safe_name}.zip"; filename*=UTF-8\'\'{quoted_name}.zip',
+                'X-Folder-File-Count': str(file_count),
+                'X-Folder-Raw-Size': str(total_size),
+            }
+        )
+
+        await response.prepare(request)
+        await stream_folder_as_zip(target_dir, response)
+        return response
+
+    async def _handle_mobile_file_info(self, request: web.Request) -> web.Response:
+        token = self._extract_mobile_token(request)
+        if not self._mobile_token_valid(token):
+            return self._mobile_forbidden_json()
+
+        import urllib.parse
+        path_param = request.match_info.get("path", "")
+        try:
+            rel_path = self._safe_relative_path(urllib.parse.unquote(path_param))
+        except Exception:
+            return web.json_response({"status": "error", "message": "Invalid path"}, status=400)
+
+        root_dir = Path(self.download_dir)
+        target_file = root_dir / rel_path
+
+        try:
+            target_abs = target_file.resolve()
+            root_abs = root_dir.resolve()
+            if not str(target_abs).startswith(str(root_abs)):
+                return web.json_response({"status": "error", "message": "Access denied"}, status=403)
+        except Exception:
+            if ".." in rel_path or os.path.isabs(rel_path):
+                return web.json_response({"status": "error", "message": "Access denied"}, status=403)
+
+        if not target_file.exists():
+            return web.json_response({"status": "error", "message": "File not found"}, status=404)
+
+        if target_file.is_dir():
+            from network.zip_streamer import estimate_folder_size
+            total_size, file_count = estimate_folder_size(target_file)
+            return web.json_response({
+                "status": "ok",
+                "name": target_file.name,
+                "type": "dir",
+                "size": total_size,
+                "file_count": file_count,
+                "mtime": int(target_file.stat().st_mtime)
+            })
+
+        try:
+            stat = target_file.stat()
+            sha256_hash = hashlib.sha256()
+            async with aiofiles.open(target_file, "rb") as f:
+                while True:
+                    chunk = await f.read(256 * 1024)
+                    if not chunk:
+                        break
+                    sha256_hash.update(chunk)
+            
+            return web.json_response({
+                "status": "ok",
+                "name": target_file.name,
+                "type": "file",
+                "size": int(stat.st_size),
+                "mtime": int(stat.st_mtime),
+                "sha256": sha256_hash.hexdigest()
+            })
+        except Exception as e:
+            return web.json_response({"status": "error", "message": str(e)}, status=500)
+
     async def _handle_clipboard(self, request: web.Request) -> web.Response:
         try:
             if self.auth_token:
