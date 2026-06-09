@@ -2,6 +2,13 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [2.4.2] - 2026-06-09
+### Features & Improvements
+* **WebDAV Support:** Added read-only WebDAV server (supporting `OPTIONS`, `PROPFIND`, `GET`, `HEAD`) to easily transfer large folders (500+ GB) from PC to phone. Directly accessible from native File apps on iOS/Android.
+* **UI Fixes:** Fixed overlapping elements (ZIP download and Date sort selector) on mobile screens.
+* **Overscroll Fix:** Fixed the white background block shown when scrolling down past page limits on mobile browsers.
+* **Performance Optimizations:** Removed redundant SHA-256 calculation for file-info queries, reducing CPU usage during mobile sync. Moved blocking directory scan operations to background threads (`run_in_executor`).
+
 ## [2.4.1] - 2026-06-09
 ### Bugfixes
 * Fixed server crash at startup due to missing handlers (`_handle_mobile_browse`, `_handle_mobile_download_folder`, `_handle_mobile_file_info`) in the `TransferServer` class.

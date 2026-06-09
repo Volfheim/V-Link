@@ -4,6 +4,7 @@ Async server for receiving files over local network.
 """
 
 import os
+import asyncio
 import sys
 import time
 import base64
@@ -137,6 +138,15 @@ class TransferServer:
         self.app.router.add_get('/api/mobile/browse', self._handle_mobile_browse)
         self.app.router.add_get('/api/mobile/download-folder/{path:.+}', self._handle_mobile_download_folder)
         self.app.router.add_get('/api/mobile/file-info/{path:.+}', self._handle_mobile_file_info)
+        
+        # WebDAV
+        self.app.router.add_route('OPTIONS', '/webdav', self._handle_webdav)
+        self.app.router.add_route('OPTIONS', '/webdav/{path:.+}', self._handle_webdav)
+        self.app.router.add_route('PROPFIND', '/webdav', self._handle_webdav)
+        self.app.router.add_route('PROPFIND', '/webdav/{path:.+}', self._handle_webdav)
+        self.app.router.add_route('GET', '/webdav', self._handle_webdav)
+        self.app.router.add_route('GET', '/webdav/{path:.+}', self._handle_webdav)
+        self.app.router.add_route('HEAD', '/webdav/{path:.+}', self._handle_webdav)
 
     @classmethod
     def _is_vpn_iface_name(cls, iface_name: str) -> bool:
@@ -412,6 +422,16 @@ class TransferServer:
             "sortBySize": t("По размеру"),
             "queueProgress": t("Загружено: {index} из {total} файлов"),
             "fileSkipped": t("Пропущен (уже загружен): {name}"),
+            "webdavHelpTitle": t("Как скачать большие папки (500 ГБ)"),
+            "webdavHelpBody": t(
+                "Вы можете подключить этот компьютер как сетевую папку (WebDAV) на вашем телефоне:<br>"
+                "<strong>Адрес:</strong> <code style=\"background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; word-break: break-all; color: var(--text);\">{url}</code><br>"
+                "<strong>Логин:</strong> <code style=\"background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; color: var(--text);\">vlink</code> (или любой)<br>"
+                "<strong>Пароль (токен):</strong> <code style=\"background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; color: var(--text);\">{token}</code><br><br>"
+                "• <strong>iOS (iPhone):</strong> Откройте приложение «Файлы» -> Три точки справа вверху -> «Подключиться к серверу» -> Введите адрес -> Выберите «Зарегистрированный пользователь» -> Введите логин и пароль (токен).<br>"
+                "• <strong>Android:</strong> В любом файловом менеджере (например, Solid Explorer) нажмите «Новое подключение» -> WebDAV -> Введите адрес, логин и пароль (токен).<br>"
+                "После этого вы сможете копировать любые папки без ограничений браузера!"
+            ),
         }
 
     def _load_mobile_html(self) -> str:
@@ -760,37 +780,43 @@ class TransferServer:
             else:
                 return web.json_response({"status": "error", "message": "Directory not found"}, status=404)
 
-        items = []
-        try:
-            for entry in target_dir.iterdir():
+        def scan_dir_sync(td, rd):
+            result = []
+            for entry in td.iterdir():
                 if entry.is_symlink():
                     continue
-                stat = entry.stat()
-                name = entry.name
-                rel_item_path = entry.relative_to(root_dir).as_posix()
+                try:
+                    stat = entry.stat()
+                    name = entry.name
+                    rel_item_path = entry.relative_to(rd).as_posix()
+                    if entry.is_dir():
+                        try:
+                            children_count = sum(1 for c in entry.iterdir() if not c.is_symlink())
+                        except OSError:
+                            children_count = 0
+                        result.append({
+                            "name": name,
+                            "path": rel_item_path,
+                            "type": "dir",
+                            "size": 0,
+                            "mtime": int(stat.st_mtime),
+                            "children_count": children_count
+                        })
+                    elif entry.is_file():
+                        result.append({
+                            "name": name,
+                            "path": rel_item_path,
+                            "type": "file",
+                            "size": int(stat.st_size),
+                            "mtime": int(stat.st_mtime)
+                        })
+                except OSError:
+                    continue
+            return result
 
-                if entry.is_dir():
-                    try:
-                        children = [c for c in entry.iterdir() if not c.is_symlink()]
-                        children_count = len(children)
-                    except OSError:
-                        children_count = 0
-                    items.append({
-                        "name": name,
-                        "path": rel_item_path,
-                        "type": "dir",
-                        "size": 0,
-                        "mtime": int(stat.st_mtime),
-                        "children_count": children_count
-                    })
-                elif entry.is_file():
-                    items.append({
-                        "name": name,
-                        "path": rel_item_path,
-                        "type": "file",
-                        "size": int(stat.st_size),
-                        "mtime": int(stat.st_mtime)
-                    })
+        try:
+            loop = asyncio.get_event_loop()
+            items = await loop.run_in_executor(None, scan_dir_sync, target_dir, root_dir)
         except OSError as e:
             return web.json_response({"status": "error", "message": f"Read error: {e}"}, status=500)
 
@@ -842,7 +868,8 @@ class TransferServer:
 
         from network.zip_streamer import stream_folder_as_zip, estimate_folder_size
 
-        total_size, file_count = estimate_folder_size(target_dir)
+        loop = asyncio.get_event_loop()
+        total_size, file_count = await loop.run_in_executor(None, estimate_folder_size, target_dir)
 
         # Ограничение в 4 ГБ для ZIP-скачивания через мобильный интерфейс
         MAX_SIZE = 4 * 1024 * 1024 * 1024
@@ -900,7 +927,8 @@ class TransferServer:
 
         if target_file.is_dir():
             from network.zip_streamer import estimate_folder_size
-            total_size, file_count = estimate_folder_size(target_file)
+            loop = asyncio.get_event_loop()
+            total_size, file_count = await loop.run_in_executor(None, estimate_folder_size, target_file)
             return web.json_response({
                 "status": "ok",
                 "name": target_file.name,
@@ -912,21 +940,13 @@ class TransferServer:
 
         try:
             stat = target_file.stat()
-            sha256_hash = hashlib.sha256()
-            async with aiofiles.open(target_file, "rb") as f:
-                while True:
-                    chunk = await f.read(256 * 1024)
-                    if not chunk:
-                        break
-                    sha256_hash.update(chunk)
-            
             return web.json_response({
                 "status": "ok",
                 "name": target_file.name,
                 "type": "file",
                 "size": int(stat.st_size),
                 "mtime": int(stat.st_mtime),
-                "sha256": sha256_hash.hexdigest()
+                "sha256": ""  # Убран тяжелый расчет SHA-256
             })
         except Exception as e:
             return web.json_response({"status": "error", "message": str(e)}, status=500)
@@ -1310,6 +1330,150 @@ class TransferServer:
         except Exception as e:
             if self.on_server_error:
                 self.on_server_error(f'Server stop error: {e}')
+
+    def _webdav_token_valid(self, request: web.Request) -> bool:
+        token = request.query.get("token", "").strip()
+        if self._mobile_token_valid(token):
+            return True
+            
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Basic "):
+            try:
+                encoded = auth_header.split(" ", 1)[1]
+                decoded = base64.b64decode(encoded).decode("utf-8")
+                if ":" in decoded:
+                    username, password = decoded.split(":", 1)
+                    if self._mobile_token_valid(password.strip()):
+                        return True
+            except Exception:
+                pass
+        return False
+
+    async def _handle_webdav(self, request: web.Request) -> web.StreamResponse:
+        if not self._webdav_token_valid(request):
+            return web.Response(
+                status=401,
+                headers={"WWW-Authenticate": 'Basic realm="V-Link WebDAV"'},
+                text="Unauthorized"
+            )
+
+        method = request.method.upper()
+        
+        if method == "OPTIONS":
+            headers = {
+                "DAV": "1, 2",
+                "Allow": "GET, HEAD, OPTIONS, PROPFIND",
+                "MS-Author-Via": "DAV",
+            }
+            return web.Response(status=200, headers=headers)
+
+        import urllib.parse
+        path_param = request.match_info.get("path", "")
+        try:
+            rel_path = self._safe_relative_path(urllib.parse.unquote(path_param))
+        except Exception:
+            rel_path = ""
+
+        root_dir = Path(self.download_dir)
+        target_path = root_dir / rel_path if rel_path else root_dir
+
+        try:
+            target_abs = target_path.resolve()
+            root_abs = root_dir.resolve()
+            if not str(target_abs).startswith(str(root_abs)):
+                return web.Response(status=403, text="Access denied")
+        except Exception:
+            return web.Response(status=403, text="Access denied")
+
+        if not target_path.exists():
+            return web.Response(status=404, text="Not found")
+
+        if method in ("GET", "HEAD"):
+            if target_path.is_file():
+                response = web.FileResponse(target_path)
+                safe_download_name = (os.path.basename(rel_path) or "download").replace('"', "'")
+                quoted_name = urllib.parse.quote(safe_download_name)
+                response.headers["Content-Disposition"] = (
+                    f'attachment; filename="{safe_download_name}"; filename*=UTF-8\'\'{quoted_name}'
+                )
+                return response
+            else:
+                return web.Response(status=403, text="Directory listing via GET/HEAD is not supported on WebDAV. Use PROPFIND.")
+
+        if method == "PROPFIND":
+            import xml.etree.ElementTree as ET
+            depth = request.headers.get("Depth", "1")
+
+            multistatus = ET.Element("d:multistatus", {"xmlns:d": "DAV:"})
+
+            def add_response(item_path: Path):
+                try:
+                    if item_path == root_dir:
+                        rel_url_path = ""
+                    else:
+                        rel_url_path = item_path.relative_to(root_dir).as_posix()
+                except ValueError:
+                    return
+
+                href_path = "/webdav/" + rel_url_path if rel_url_path else "/webdav/"
+                if item_path.is_dir() and not href_path.endswith("/"):
+                    href_path += "/"
+
+                href_encoded = urllib.parse.quote(href_path)
+
+                response_el = ET.SubElement(multistatus, "d:response")
+                ET.SubElement(response_el, "d:href").text = href_encoded
+
+                propstat = ET.SubElement(response_el, "d:propstat")
+                prop = ET.SubElement(propstat, "d:prop")
+
+                displayname = item_path.name or "webdav"
+                ET.SubElement(prop, "d:displayname").text = displayname
+
+                resourcetype = ET.SubElement(prop, "d:resourcetype")
+                if item_path.is_dir():
+                    ET.SubElement(resourcetype, "d:collection")
+                    ET.SubElement(prop, "d:getcontentlength").text = "0"
+                else:
+                    try:
+                        stat = item_path.stat()
+                        ET.SubElement(prop, "d:getcontentlength").text = str(stat.st_size)
+                    except OSError:
+                        ET.SubElement(prop, "d:getcontentlength").text = "0"
+
+                try:
+                    mtime = item_path.stat().st_mtime
+                    mtime_str = time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(mtime))
+                except OSError:
+                    mtime_str = time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(time.time()))
+                ET.SubElement(prop, "d:getlastmodified").text = mtime_str
+
+                ET.SubElement(propstat, "d:status").text = "HTTP/1.1 200 OK"
+
+            add_response(target_path)
+
+            if depth == "1" and target_path.is_dir():
+                def list_dir_sync(p: Path):
+                    try:
+                        return [c for c in p.iterdir() if not c.is_symlink()]
+                    except OSError:
+                        return []
+
+                loop = asyncio.get_event_loop()
+                children = await loop.run_in_executor(None, list_dir_sync, target_path)
+                for child in children:
+                    add_response(child)
+
+            xml_data = ET.tostring(multistatus, encoding="utf-8", xml_declaration=True)
+            return web.Response(
+                body=xml_data,
+                status=207,
+                content_type="application/xml",
+                charset="utf-8",
+                headers={"DAV": "1, 2"}
+            )
+
+        return web.Response(status=405, text="Method Not Allowed")
 
     def is_running(self) -> bool:
         return self._running
