@@ -2,6 +2,10 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [2.4.1] - 2026-06-09
+### Bugfixes
+* Fixed server crash at startup due to missing handlers (`_handle_mobile_browse`, `_handle_mobile_download_folder`, `_handle_mobile_file_info`) in the `TransferServer` class.
+
 ## [2.4.0] - 2026-06-09
 ### Mobile Folder Transfer & OOM protection
 * Added folder navigation (breadcrumbs) and folder contents listing in the mobile web interface.

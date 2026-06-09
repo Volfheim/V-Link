@@ -2,7 +2,7 @@
 V-Link version metadata.
 """
 
-__version__ = "2.4.0"
+__version__ = "2.4.1"
 __author__ = "Volfheim"
 __app_name__ = "V-Link"
 __description__ = "V-Link - Fast file transfer"
