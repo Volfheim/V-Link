@@ -4,6 +4,7 @@ import json, os, sys, urllib.request, urllib.error
 TAG = "v2.4.2"
 REPO = "Volfheim/V-Link"
 EXE_PATH = r"dist/V-Link.exe"
+
 TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
 if not TOKEN:
     if len(sys.argv) > 1:
@@ -15,15 +16,22 @@ if not TOKEN:
 RELEASE_URL = f"https://api.github.com/repos/{REPO}/releases"
 UPLOAD_URL_TEMPLATE = "https://uploads.github.com/repos/{REPO}/releases/{release_id}/assets?name={name}"
 
+def make_request(url, data=None, method=None, headers=None):
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Authorization", f"token {TOKEN}")
+    req.add_header("User-Agent", "V-Link-Release-Bot")
+    if headers:
+        for k, v in headers.items():
+            req.add_header(k, v)
+    return req
+
 def main():
     if not os.path.exists(EXE_PATH):
         print(f"Error: {EXE_PATH} not found")
         sys.exit(1)
 
     print(f"Checking existing release {TAG}...")
-    req = urllib.request.Request(f"{RELEASE_URL}/tags/{TAG}")
-    req.add_header("Authorization", f"token {TOKEN}")
-    req.add_header("Accept", "application/vnd.github.v3+json")
+    req = make_request(f"{RELEASE_URL}/tags/{TAG}", headers={"Accept": "application/vnd.github.v3+json"})
     
     release_id = None
     try:
@@ -38,11 +46,10 @@ def main():
                 if asset['name'] == os.path.basename(EXE_PATH):
                     asset_id = asset['id']
                     print(f"Deleting existing asset {asset['name']} (ID: {asset_id})...")
-                    del_req = urllib.request.Request(
+                    del_req = make_request(
                         f"https://api.github.com/repos/{REPO}/releases/assets/{asset_id}",
                         method="DELETE"
                     )
-                    del_req.add_header("Authorization", f"token {TOKEN}")
                     try:
                         with urllib.request.urlopen(del_req) as df:
                             print("Old asset deleted.")
@@ -50,7 +57,7 @@ def main():
                         print(f"Failed to delete old asset: {de}")
     except urllib.error.HTTPError as e:
         if e.code != 404:
-            print(f"Error checking release: {e}")
+            print(f"Error checking release (HTTP {e.code}): {e}")
             sys.exit(1)
 
     if not release_id:
@@ -71,9 +78,7 @@ def main():
             "prerelease": False
         }).encode('utf-8')
 
-        req = urllib.request.Request(RELEASE_URL, data=payload, method="POST")
-        req.add_header("Authorization", f"token {TOKEN}")
-        req.add_header("Content-Type", "application/json")
+        req = make_request(RELEASE_URL, data=payload, method="POST", headers={"Content-Type": "application/json"})
         
         try:
             with urllib.request.urlopen(req) as f:
@@ -92,9 +97,12 @@ def main():
     filename = os.path.basename(EXE_PATH)
     upload_url = UPLOAD_URL_TEMPLATE.format(REPO=REPO, release_id=release_id, name=filename)
     
-    req = urllib.request.Request(upload_url, data=content, method="POST")
-    req.add_header("Authorization", f"token {TOKEN}")
-    req.add_header("Content-Type", "application/vnd.microsoft.portable-executable")
+    req = make_request(
+        upload_url, 
+        data=content, 
+        method="POST", 
+        headers={"Content-Type": "application/vnd.microsoft.portable-executable"}
+    )
     
     try:
         with urllib.request.urlopen(req) as f:
