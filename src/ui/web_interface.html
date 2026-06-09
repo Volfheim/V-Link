@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="{{HTML_LANG}}">
 
 <head>
@@ -11,15 +11,14 @@
         :root {
             --bg: #0f172a;
             --surface: rgba(30, 41, 59, 0.7);
-            /* More transparent surface */
             --primary: #8b5cf6;
-            /* Violet */
             --primary-dark: #7c3aed;
             --text: #f8fafc;
             --text-secondary: #cbd5e1;
             --border: rgba(255, 255, 255, 0.1);
             --danger: #ef4444;
             --success: #22c55e;
+            --info: #0ea5e9;
             --radius: 20px;
         }
 
@@ -35,7 +34,6 @@
             background-attachment: fixed;
             color: var(--text);
             padding-bottom: 30px;
-            /* Safe area for bottom bar */
             min-height: 100vh;
         }
 
@@ -60,12 +58,6 @@
             display: flex;
             align-items: center;
             gap: 10px;
-        }
-
-        .brand svg {
-            width: 24px;
-            height: 24px;
-            color: var(--primary);
         }
 
         .status-badge {
@@ -154,8 +146,83 @@
             margin-right: 8px;
         }
 
+        .btn-small {
+            padding: 8px 14px;
+            font-size: 13px;
+            border-radius: 10px;
+            width: auto;
+            box-shadow: none;
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border);
+            box-shadow: none;
+            color: var(--text);
+        }
+
+        .btn-outline:active {
+            background: rgba(255,255,255,0.05);
+        }
+
         #fileInput, #dirInput {
             display: none;
+        }
+
+        /* --- Breadcrumb --- */
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            overflow-x: auto;
+            white-space: nowrap;
+            padding-bottom: 4px;
+            scrollbar-width: none;
+        }
+        .breadcrumb::-webkit-scrollbar { display: none; }
+
+        .breadcrumb-item {
+            cursor: pointer;
+            color: var(--primary);
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+        .breadcrumb-item:active { opacity: 0.7; }
+        .breadcrumb-item.current {
+            color: var(--text);
+            cursor: default;
+            font-weight: 600;
+        }
+        .breadcrumb-sep {
+            color: var(--text-secondary);
+            opacity: 0.5;
+            flex-shrink: 0;
+        }
+
+        /* --- Browse toolbar --- */
+        .browse-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .browse-stats {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .sort-select {
+            background: rgba(30,41,59,0.7);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 8px;
+            cursor: pointer;
         }
 
         /* --- Files List --- */
@@ -187,20 +254,21 @@
         .file-list {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 8px;
         }
 
         .file-card {
             background: var(--surface);
             border-radius: 16px;
-            padding: 16px;
+            padding: 14px 16px;
             display: flex;
             align-items: center;
-            gap: 16px;
+            gap: 14px;
             border: 1px solid var(--border);
             text-decoration: none;
             color: inherit;
             transition: transform 0.1s;
+            cursor: pointer;
         }
 
         .file-card:active {
@@ -208,9 +276,13 @@
             background: #263345;
         }
 
+        .file-card.downloaded {
+            border-left: 3px solid var(--success);
+        }
+
         .file-icon {
-            width: 48px;
-            height: 48px;
+            width: 44px;
+            height: 44px;
             background: #273548;
             border-radius: 12px;
             display: flex;
@@ -220,6 +292,11 @@
             flex-shrink: 0;
         }
 
+        .file-icon.folder-icon {
+            background: rgba(14, 165, 233, 0.15);
+            color: var(--info);
+        }
+
         .file-info {
             flex: 1;
             min-width: 0;
@@ -227,23 +304,92 @@
 
         .file-name {
             font-weight: 600;
-            font-size: 15px;
+            font-size: 14px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            margin-bottom: 4px;
+            margin-bottom: 3px;
         }
 
         .file-meta {
-            font-size: 13px;
+            font-size: 12px;
             color: var(--text-secondary);
         }
 
-        .download-icon {
+        .file-action {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .download-badge {
             color: var(--primary);
-            padding: 8px;
+            padding: 6px;
             background: rgba(99, 102, 241, 0.1);
             border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .check-badge {
+            color: var(--success);
+            display: flex;
+            align-items: center;
+        }
+
+        .folder-arrow {
+            color: var(--text-secondary);
+            opacity: 0.5;
+        }
+
+        /* --- Download progress overlay --- */
+        .dl-progress {
+            position: fixed;
+            bottom: 70px;
+            left: 20px;
+            right: 20px;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(16px);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            padding: 16px;
+            z-index: 300;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
+            display: none;
+        }
+
+        .dl-progress.active { display: block; }
+
+        .dl-progress-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .dl-progress-bar {
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 6px;
+        }
+
+        .dl-progress-fill {
+            height: 100%;
+            background: var(--primary);
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.15s;
+        }
+
+        .dl-progress-meta {
+            font-size: 12px;
+            color: var(--text-secondary);
         }
 
         /* --- Toast & Progress --- */
@@ -274,27 +420,14 @@
             animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        .toast.error {
-            border-left: 4px solid var(--danger);
-        }
-
-        .toast.success {
-            border-left: 4px solid var(--success);
-        }
+        .toast.error { border-left: 4px solid var(--danger); }
+        .toast.success { border-left: 4px solid var(--success); }
 
         @keyframes slideUp {
-            from {
-                transform: translateY(100%);
-                opacity: 0;
-            }
-
-            to {
-                transform: translateY(0);
-                opacity: 1;
-            }
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
         }
 
-        /* Progress Bar */
         .progress-bar-wrap {
             position: fixed;
             bottom: 0;
@@ -322,9 +455,7 @@
             text-align: left;
         }
 
-        .upload-detail.hidden {
-            display: none;
-        }
+        .upload-detail.hidden { display: none; }
 
         .upload-detail-title {
             font-weight: 700;
@@ -339,11 +470,40 @@
             line-height: 1.45;
         }
 
-        /* Utilities */
         .empty-state {
             text-align: center;
             padding: 40px 20px;
             color: var(--text-secondary);
+        }
+
+        /* --- Back button --- */
+        .back-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .back-btn {
+            background: rgba(30,41,59,0.7);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 14px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .back-btn:active {
+            background: rgba(30,41,59,1);
+        }
+
+        .dl-folder-btn {
+            margin-left: auto;
         }
     </style>
 </head>
@@ -353,7 +513,6 @@
     <!-- Header -->
     <header class="header">
         <div class="brand">
-            <!-- Logo Icon -->
             <img src="data:image/png;base64,{{LOGO_BASE64}}" style="width: 32px; height: 32px; object-fit: contain;" alt="V-Link">
             V-Link
         </div>
@@ -399,7 +558,7 @@
             </div>
         </div>
 
-        <!-- Files List -->
+        <!-- Browse Section -->
         <div>
             <div class="section-header">
                 <div class="section-title" id="filesOnPcTitle">Files on PC</div>
@@ -412,12 +571,50 @@
                     </svg>
                 </button>
             </div>
+
+            <!-- Breadcrumb -->
+            <div class="breadcrumb" id="breadcrumb"></div>
+
+            <!-- Toolbar: back, download folder, sort -->
+            <div class="browse-toolbar" id="browseToolbar" style="display: none;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <button class="back-btn" id="backBtn" style="display:none;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                        <span id="backText">Back</span>
+                    </button>
+                    <span class="browse-stats" id="browseStats"></span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <button class="btn btn-small" id="downloadFolderBtn" style="display:none; background: var(--info);">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        <span id="downloadFolderText">ZIP</span>
+                    </button>
+                    <select class="sort-select" id="sortSelect">
+                        <option value="name">A-Z</option>
+                        <option value="date" selected>Date</option>
+                        <option value="size">Size</option>
+                    </select>
+                </div>
+            </div>
+
             <div id="fileList" class="file-list">
-                <!-- JS will populate this -->
                 <div class="empty-state" id="listLoadingText">Loading list...</div>
             </div>
         </div>
 
+    </div>
+
+    <!-- Download Progress -->
+    <div class="dl-progress" id="dlProgress">
+        <div class="dl-progress-title" id="dlProgressTitle">Downloading...</div>
+        <div class="dl-progress-bar"><div class="dl-progress-fill" id="dlProgressFill"></div></div>
+        <div class="dl-progress-meta" id="dlProgressMeta"></div>
     </div>
 
     <!-- Progress Bar -->
@@ -435,6 +632,22 @@
         const params = new URLSearchParams(window.location.search);
         const TOKEN = params.get("token") || "";
 
+        // Download tracking
+        const DOWNLOADED_KEY = 'vlink_downloaded';
+        function getDownloaded() {
+            try { return JSON.parse(localStorage.getItem(DOWNLOADED_KEY) || '{}'); } catch { return {}; }
+        }
+        function markDownloaded(name, size, mtime) {
+            const d = getDownloaded();
+            d[name] = { size, mtime, ts: Date.now() };
+            localStorage.setItem(DOWNLOADED_KEY, JSON.stringify(d));
+        }
+        function isDownloaded(name, size, mtime) {
+            const d = getDownloaded();
+            const entry = d[name];
+            return entry && entry.size === size && entry.mtime === mtime;
+        }
+
         const dom = {
             fileInput: document.getElementById('fileInput'),
             dirInput: document.getElementById('dirInput'),
@@ -447,7 +660,17 @@
             uploadDetailTitle: document.getElementById('uploadDetailTitle'),
             uploadDetailMeta: document.getElementById('uploadDetailMeta'),
             uploadDetailBytes: document.getElementById('uploadDetailBytes'),
-            toastContainer: document.getElementById('toastContainer')
+            toastContainer: document.getElementById('toastContainer'),
+            breadcrumb: document.getElementById('breadcrumb'),
+            browseToolbar: document.getElementById('browseToolbar'),
+            backBtn: document.getElementById('backBtn'),
+            browseStats: document.getElementById('browseStats'),
+            downloadFolderBtn: document.getElementById('downloadFolderBtn'),
+            sortSelect: document.getElementById('sortSelect'),
+            dlProgress: document.getElementById('dlProgress'),
+            dlProgressTitle: document.getElementById('dlProgressTitle'),
+            dlProgressFill: document.getElementById('dlProgressFill'),
+            dlProgressMeta: document.getElementById('dlProgressMeta'),
         };
 
         // Localize static labels
@@ -458,6 +681,13 @@
         if (document.getElementById('chooseFolderText')) document.getElementById('chooseFolderText').textContent = tr('chooseFolder', 'Folder');
         document.getElementById('filesOnPcTitle').textContent = tr('filesOnPc', 'Files on PC');
         document.getElementById('listLoadingText').textContent = tr('loadingList', 'Loading list...');
+        document.getElementById('backText').textContent = tr('back', 'Back');
+        document.getElementById('downloadFolderText').textContent = tr('downloadFolder', 'Download ZIP');
+
+        // State
+        let currentPath = '';
+        let currentItems = [];
+        let currentSort = 'date';
 
         // --- Utils ---
         function humanSize(bytes) {
@@ -473,11 +703,7 @@
 
         function escapeHtml(value) {
             return String(value || '').replace(/[&<>"']/g, (ch) => ({
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                '"': '&quot;',
-                "'": '&#39;'
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
             }[ch]));
         }
 
@@ -486,8 +712,6 @@
             toast.className = `toast ${type}`;
             toast.textContent = msg;
             dom.toastContainer.appendChild(toast);
-
-            // Remove after 3s
             setTimeout(() => {
                 toast.style.opacity = '0';
                 toast.style.transform = 'translateY(20px)';
@@ -495,68 +719,329 @@
             }, 3000);
         }
 
+        function getFolderIcon() {
+            return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`;
+        }
+
         function getFileIcon(filename) {
             const ext = filename.split('.').pop().toLowerCase();
-            // Default File Icon
             let path = '<path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline>';
-
-            if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
-                // Image Icon
+            if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp'].includes(ext)) {
                 path = '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>';
-            } else if (['mp4', 'mov', 'avi', 'mkv'].includes(ext)) {
-                // Video Icon
+            } else if (['mp4', 'mov', 'avi', 'mkv', 'wmv', 'flv', '3gp'].includes(ext)) {
                 path = '<rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line>';
-            } else if (['mp3', 'wav', 'ogg'].includes(ext)) {
-                // Music Icon
+            } else if (['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma'].includes(ext)) {
                 path = '<path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>';
+            } else if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+                path = '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>';
             }
-
             return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
         }
 
-        // --- API ---
-        async function fetchFiles() {
+        // --- Breadcrumb ---
+        function renderBreadcrumb(path) {
+            if (!path) {
+                dom.breadcrumb.innerHTML = '';
+                return;
+            }
+            const parts = path.split('/').filter(Boolean);
+            let html = `<span class="breadcrumb-item" data-path="">📁 ${tr('filesOnPc', 'PC')}</span>`;
+            let accumulated = '';
+            parts.forEach((part, i) => {
+                accumulated += (accumulated ? '/' : '') + part;
+                html += `<span class="breadcrumb-sep">›</span>`;
+                const isLast = i === parts.length - 1;
+                html += `<span class="breadcrumb-item ${isLast ? 'current' : ''}" data-path="${escapeHtml(accumulated)}">${escapeHtml(part)}</span>`;
+            });
+            dom.breadcrumb.innerHTML = html;
+
+            dom.breadcrumb.querySelectorAll('.breadcrumb-item:not(.current)').forEach(el => {
+                el.addEventListener('click', () => browseTo(el.dataset.path));
+            });
+            // Scroll breadcrumb to end
+            dom.breadcrumb.scrollLeft = dom.breadcrumb.scrollWidth;
+        }
+
+        // --- Browse API ---
+        async function browseTo(path) {
+            currentPath = path || '';
+            if (!TOKEN) return;
+            try {
+                const url = `/api/mobile/browse?token=${encodeURIComponent(TOKEN)}&path=${encodeURIComponent(currentPath)}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    currentItems = data.items || [];
+                    renderBrowse(data);
+                }
+            } catch (e) {
+                console.error('Browse error', e);
+                // Fallback to flat list
+                fetchFilesFlat();
+            }
+        }
+
+        // Fallback for servers without /api/mobile/browse
+        async function fetchFilesFlat() {
             if (!TOKEN) return;
             try {
                 const res = await fetch(`/api/mobile/files?token=${encodeURIComponent(TOKEN)}`);
                 const data = await res.json();
                 if (data.status === 'ok') {
-                    renderFiles(data.files);
+                    currentItems = (data.files || []).map(f => ({ ...f, type: 'file' }));
+                    renderBrowse({ status: 'ok', path: '', items: currentItems, parent: null });
                 }
             } catch (e) {
                 console.error("Fetch error", e);
             }
         }
 
-        function renderFiles(files) {
-            if (!files || files.length === 0) {
-                dom.fileList.innerHTML = `<div class="empty-state">${tr('emptyFolder', 'Downloads folder is empty')}</div>`;
+        function sortItems(items) {
+            const dirs = items.filter(i => i.type === 'dir');
+            const files = items.filter(i => i.type === 'file');
+
+            const sortFn = currentSort === 'name'
+                ? (a, b) => (a.name || '').localeCompare(b.name || '')
+                : currentSort === 'size'
+                ? (a, b) => (b.size || 0) - (a.size || 0)
+                : (a, b) => (b.mtime || 0) - (a.mtime || 0);
+
+            dirs.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            files.sort(sortFn);
+            return [...dirs, ...files];
+        }
+
+        function renderBrowse(data) {
+            const path = data.path || '';
+            const parent = data.parent;
+            const items = sortItems(data.items || []);
+
+            // Breadcrumb
+            renderBreadcrumb(path);
+
+            // Toolbar
+            dom.browseToolbar.style.display = 'flex';
+            const dirCount = items.filter(i => i.type === 'dir').length;
+            const fileCount = items.filter(i => i.type === 'file').length;
+            const totalSize = items.filter(i => i.type === 'file').reduce((s, i) => s + (i.size || 0), 0);
+            let statsText = '';
+            if (dirCount > 0) statsText += `📁 ${dirCount}  `;
+            if (fileCount > 0) statsText += `📄 ${fileCount}`;
+            if (totalSize > 0) statsText += ` • ${humanSize(totalSize)}`;
+            dom.browseStats.textContent = statsText;
+
+            // Back button
+            if (path) {
+                dom.backBtn.style.display = 'inline-flex';
+            } else {
+                dom.backBtn.style.display = 'none';
+            }
+
+            // Download folder button
+            if (path && fileCount > 0) {
+                dom.downloadFolderBtn.style.display = 'inline-flex';
+            } else {
+                dom.downloadFolderBtn.style.display = 'none';
+            }
+
+            // File list
+            if (!items.length) {
+                dom.fileList.innerHTML = `<div class="empty-state">${tr('emptyFolder', 'Folder is empty')}</div>`;
                 return;
             }
 
-            dom.fileList.innerHTML = files.map(f => {
-                const safeName = escapeHtml(f.name);
-                const href = `/api/mobile/download/${encodeURIComponent(f.name)}?token=${encodeURIComponent(TOKEN)}`;
-                return `
-                <a href="${href}" class="file-card" download>
-                    <div class="file-icon">
-                        ${getFileIcon(f.name)}
-                    </div>
-                    <div class="file-info">
-                        <div class="file-name" title="${safeName}">${safeName}</div>
-                        <div class="file-meta">${humanSize(f.size)} • ${new Date(f.mtime * 1000).toLocaleDateString()}</div>
-                    </div>
-                    <div class="download-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="7 10 12 15 17 10"></polyline>
-                            <line x1="12" y1="15" x2="12" y2="3"></line>
-                        </svg>
-                    </div>
-                </a>
-            `}).join('');
+            dom.fileList.innerHTML = items.map(item => {
+                if (item.type === 'dir') {
+                    const safeName = escapeHtml(item.name);
+                    const childInfo = item.children_count != null ? `${item.children_count} items` : '';
+                    const sizeInfo = item.size ? humanSize(item.size) : '';
+                    const meta = [sizeInfo, childInfo].filter(Boolean).join(' • ');
+                    return `
+                    <div class="file-card" data-type="dir" data-path="${escapeHtml((path ? path + '/' : '') + item.name)}">
+                        <div class="file-icon folder-icon">${getFolderIcon()}</div>
+                        <div class="file-info">
+                            <div class="file-name" title="${safeName}">${safeName}</div>
+                            <div class="file-meta">${meta}</div>
+                        </div>
+                        <div class="file-action">
+                            <span class="folder-arrow">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="9 18 15 12 9 6"></polyline>
+                                </svg>
+                            </span>
+                        </div>
+                    </div>`;
+                } else {
+                    const safeName = escapeHtml(item.name);
+                    const fullPath = path ? path + '/' + item.name : item.name;
+                    const dlKey = fullPath;
+                    const isDl = isDownloaded(dlKey, item.size, item.mtime);
+                    const cardClass = isDl ? 'file-card downloaded' : 'file-card';
+                    const meta = `${humanSize(item.size)} • ${new Date(item.mtime * 1000).toLocaleDateString()}`;
+                    return `
+                    <div class="${cardClass}" data-type="file" data-path="${escapeHtml(fullPath)}" data-name="${safeName}" data-size="${item.size}" data-mtime="${item.mtime}">
+                        <div class="file-icon">${getFileIcon(item.name)}</div>
+                        <div class="file-info">
+                            <div class="file-name" title="${safeName}">${safeName}</div>
+                            <div class="file-meta">${meta}</div>
+                        </div>
+                        <div class="file-action">
+                            ${isDl ? '<span class="check-badge"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' : '<span class="download-badge"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></span>'}
+                        </div>
+                    </div>`;
+                }
+            }).join('');
+
+            // Bind click events
+            dom.fileList.querySelectorAll('.file-card[data-type="dir"]').forEach(el => {
+                el.addEventListener('click', () => browseTo(el.dataset.path));
+            });
+
+            dom.fileList.querySelectorAll('.file-card[data-type="file"]').forEach(el => {
+                el.addEventListener('click', () => {
+                    downloadFile(el.dataset.path, el.dataset.name, Number(el.dataset.size), Number(el.dataset.mtime));
+                });
+            });
         }
 
+        // --- Download with progress ---
+        async function downloadFile(filePath, displayName, size, mtime) {
+            const url = `/api/mobile/download/${encodeURIComponent(filePath)}?token=${encodeURIComponent(TOKEN)}`;
+            
+            // Если файл больше 50 МБ, качаем напрямую без JS-буферизации в Blob
+            if (size > 50 * 1024 * 1024) {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = displayName || filePath.split('/').pop() || 'download';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                
+                // Отмечаем как скачанный
+                markDownloaded(filePath, size, mtime);
+                showToast(tr('downloaded', 'Downloaded') + ': ' + (displayName || filePath), 'success');
+                setTimeout(() => browseTo(currentPath), 1000);
+                return;
+            }
+
+            try {
+                dom.dlProgress.classList.add('active');
+                dom.dlProgressTitle.textContent = displayName || filePath;
+                dom.dlProgressFill.style.width = '0%';
+                dom.dlProgressMeta.textContent = `0 / ${humanSize(size)}`;
+
+                const res = await fetch(url);
+
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+
+                const contentLength = Number(res.headers.get('Content-Length')) || size;
+                const reader = res.body.getReader();
+                const chunks = [];
+                let received = 0;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    chunks.push(value);
+                    received += value.length;
+                    const pct = contentLength > 0 ? (received / contentLength * 100) : 0;
+                    dom.dlProgressFill.style.width = pct.toFixed(1) + '%';
+                    dom.dlProgressMeta.textContent = `${humanSize(received)} / ${humanSize(contentLength)}`;
+                }
+
+                // Create blob and trigger download
+                const blob = new Blob(chunks);
+                const blobUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = displayName || filePath.split('/').pop() || 'download';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(blobUrl);
+
+                // Mark as downloaded
+                markDownloaded(filePath, size, mtime);
+                showToast(tr('downloaded', 'Downloaded') + ': ' + (displayName || filePath), 'success');
+
+                // Refresh current view to show checkmark
+                browseTo(currentPath);
+            } catch (e) {
+                showToast(tr('networkError', 'Download error') + ': ' + e.message, 'error');
+            } finally {
+                dom.dlProgress.classList.remove('active');
+            }
+        }
+
+        async function downloadCurrentFolder() {
+            if (!currentPath) return;
+            const folderName = currentPath.split('/').pop() || 'download';
+            try {
+                dom.dlProgress.classList.add('active');
+                dom.dlProgressTitle.textContent = tr('preparing', 'Preparing ZIP...');
+                dom.dlProgressFill.style.width = '0%';
+                dom.dlProgressMeta.textContent = folderName + '.zip';
+
+                const url = `/api/mobile/download-folder/${encodeURIComponent(currentPath)}?token=${encodeURIComponent(TOKEN)}`;
+                const res = await fetch(url);
+
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.message || `HTTP ${res.status}`);
+                }
+
+                const rawSize = Number(res.headers.get('X-Folder-Raw-Size')) || 0;
+                
+                // Если размер папки > 100 МБ, качаем ZIP напрямую без буферизации в Blob вкладки JS
+                if (rawSize > 100 * 1024 * 1024) {
+                    dom.dlProgress.classList.remove('active');
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = folderName + '.zip';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    showToast(tr('downloading', 'Downloading') + ': ' + folderName + '.zip', 'success');
+                    return;
+                }
+
+                const reader = res.body.getReader();
+                const chunks = [];
+                let received = 0;
+
+                dom.dlProgressTitle.textContent = tr('downloading', 'Downloading...');
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    chunks.push(value);
+                    received += value.length;
+                    const pct = rawSize > 0 ? Math.min(100, received / rawSize * 100) : 0;
+                    dom.dlProgressFill.style.width = pct.toFixed(1) + '%';
+                    dom.dlProgressMeta.textContent = `${humanSize(received)} ${rawSize > 0 ? '/ ~' + humanSize(rawSize) : ''}`;
+                }
+
+                const blob = new Blob(chunks, { type: 'application/zip' });
+                const blobUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = folderName + '.zip';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(blobUrl);
+
+                showToast(tr('downloaded', 'Downloaded') + ': ' + folderName + '.zip', 'success');
+            } catch (e) {
+                showToast(tr('folderTooLarge', 'Error') + ': ' + e.message, 'error');
+            } finally {
+                dom.dlProgress.classList.remove('active');
+            }
+        }
+
+        // --- Upload queue for large folders ---
         async function uploadFiles(e) {
             const files = Array.from(e.target.files || []);
             if (!files.length) return;
@@ -566,62 +1051,110 @@
             const rootName = firstRel.includes('/') ? firstRel.split('/')[0] : '';
             const uploadName = rootName || (files.length === 1 ? files[0].name : 'mobile-upload');
 
-            const formData = new FormData();
-            for (const file of files) {
-                const relPath = file.webkitRelativePath || file.name;
-                formData.append('file', file, relPath);
-            }
-
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', `/api/mobile/upload?token=${encodeURIComponent(TOKEN)}`, true);
-            xhr.setRequestHeader('X-Upload-Total-Size', String(totalBytes));
-            xhr.setRequestHeader('X-Upload-File-Count', String(files.length));
-            xhr.setRequestHeader('X-Upload-Name', encodeURIComponent(uploadName));
-
             dom.uploadDetail.classList.remove('hidden');
             dom.uploadDetailTitle.textContent = tr('uploading', 'Uploading...');
-            dom.uploadDetailMeta.textContent = rootName
-                ? `${tr('selectedFolder', 'Folder: {name}').replace('{name}', rootName)} • ${tr('selectedFiles', 'Files: {count}').replace('{count}', files.length)}`
-                : tr('selectedFiles', 'Files: {count}').replace('{count}', files.length);
-            dom.uploadDetailBytes.textContent = tr('uploadBytes', '{sent} of {total}')
-                .replace('{sent}', humanSize(0))
-                .replace('{total}', humanSize(totalBytes));
+            
+            // Генерация сессионного transfer_id
+            const transferId = `mobile-queue-${Date.now()}`;
+            
+            let uploadedBytesBefore = 0;
+            let fileIndex = 0;
 
-            xhr.upload.onprogress = (e) => {
-                if (e.lengthComputable) {
-                    const percent = (e.loaded / e.total) * 100;
-                    dom.progressBar.style.width = percent + '%';
-                    const sent = totalBytes > 0 ? Math.min(totalBytes, e.loaded) : e.loaded;
-                    dom.uploadDetailBytes.textContent = tr('uploadBytes', '{sent} of {total}')
-                        .replace('{sent}', humanSize(sent))
-                        .replace('{total}', humanSize(totalBytes || e.total));
-                }
+            const updateQueueProgress = (currentFileName, currentFileSent, currentFileSize) => {
+                const percent = totalBytes > 0 ? (((uploadedBytesBefore + currentFileSent) / totalBytes) * 100) : 0;
+                dom.progressBar.style.width = percent.toFixed(1) + '%';
+                
+                const totalSent = uploadedBytesBefore + currentFileSent;
+                
+                // Отображаем "Загружено X из Y файлов" и имя текущего файла
+                const filesProgress = tr('queueProgress', 'Uploaded {index} of {total} files')
+                    .replace('{index}', String(fileIndex + 1))
+                    .replace('{total}', String(files.length));
+                    
+                dom.uploadDetailMeta.textContent = `${filesProgress}\n→ ${currentFileName} (${humanSize(currentFileSize)})`;
+                dom.uploadDetailBytes.textContent = tr('uploadBytes', '{sent} of {total}')
+                    .replace('{sent}', humanSize(totalSent))
+                    .replace('{total}', humanSize(totalBytes));
             };
 
-            xhr.onload = () => {
-                dom.progressBar.style.width = '0%';
-                if (xhr.status === 200) {
+            const uploadNextFile = async () => {
+                if (fileIndex >= files.length) {
+                    // Все файлы загружены!
+                    dom.progressBar.style.width = '100%';
                     dom.uploadDetailTitle.textContent = tr('uploadComplete', 'Done');
                     dom.uploadDetailBytes.textContent = tr('uploadBytes', '{sent} of {total}')
                         .replace('{sent}', humanSize(totalBytes))
                         .replace('{total}', humanSize(totalBytes));
                     showToast(tr('uploadSuccess', 'Files uploaded successfully'), 'success');
-                    fetchFiles();
-                } else {
-                    showToast(tr('uploadError', 'Upload error'), 'error');
-                    dom.uploadDetail.classList.add('hidden');
+                    dom.fileInput.value = '';
+                    if (dom.dirInput) dom.dirInput.value = '';
+                    browseTo(currentPath);
+                    return;
                 }
-                dom.fileInput.value = '';
-                if (dom.dirInput) dom.dirInput.value = '';
+
+                const file = files[fileIndex];
+                const relPath = file.webkitRelativePath || file.name;
+                
+                // Быстрая проверка: если файл уже есть на сервере, пропускаем его
+                try {
+                    const infoUrl = `/api/mobile/file-info/${encodeURIComponent(relPath)}?token=${encodeURIComponent(TOKEN)}`;
+                    const infoRes = await fetch(infoUrl);
+                    if (infoRes.ok) {
+                        const infoData = await infoRes.json();
+                        if (infoData.status === 'ok' && infoData.type === 'file' && Number(infoData.size) === file.size) {
+                            // Файл уже на сервере, пропускаем
+                            uploadedBytesBefore += file.size;
+                            fileIndex++;
+                            showToast(tr('fileSkipped', 'Skipped: {name}').replace('{name}', file.name), 'info');
+                            // Сразу переходим к следующему файлу в очереди
+                            setTimeout(uploadNextFile, 0);
+                            return;
+                        }
+                    }
+                } catch (err) {
+                    console.warn("Skipping file-info check", err);
+                }
+
+                const xhr = new XMLHttpRequest();
+                // Отправляем файл напрямую в body как бинарный поток
+                xhr.open('POST', `/api/mobile/upload?token=${encodeURIComponent(TOKEN)}`, true);
+                xhr.setRequestHeader('X-Upload-Path', encodeURIComponent(relPath));
+                xhr.setRequestHeader('X-Upload-Transfer-Id', transferId);
+                xhr.setRequestHeader('X-Upload-Total-Size', String(totalBytes));
+                xhr.setRequestHeader('X-Upload-File-Index', String(fileIndex));
+                xhr.setRequestHeader('X-Upload-File-Count', String(files.length));
+                xhr.setRequestHeader('X-Upload-Name', encodeURIComponent(uploadName));
+                xhr.setRequestHeader('X-Upload-Bytes-Sent', String(uploadedBytesBefore));
+                xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        updateQueueProgress(file.name, e.loaded, file.size);
+                    }
+                };
+
+                xhr.onload = () => {
+                    if (xhr.status === 200) {
+                        uploadedBytesBefore += file.size;
+                        fileIndex++;
+                        uploadNextFile();
+                    } else {
+                        showToast(tr('uploadError', 'Upload error') + `: ${file.name}`, 'error');
+                        dom.progressBar.style.width = '0%';
+                        dom.uploadDetail.classList.add('hidden');
+                    }
+                };
+
+                xhr.onerror = () => {
+                    showToast(tr('networkError', 'Network error'), 'error');
+                    dom.progressBar.style.width = '0%';
+                    dom.uploadDetail.classList.add('hidden');
+                };
+
+                xhr.send(file);
             };
 
-            xhr.onerror = () => {
-                showToast(tr('networkError', 'Network error'), 'error');
-                dom.progressBar.style.width = '0%';
-                dom.uploadDetail.classList.add('hidden');
-            };
-
-            xhr.send(formData);
+            uploadNextFile();
         }
 
         // --- Init ---
@@ -637,18 +1170,34 @@
             if (dom.chooseFolderBtn) dom.chooseFolderBtn.addEventListener('click', () => dom.dirInput.click());
             dom.fileInput.addEventListener('change', uploadFiles);
             if (dom.dirInput) dom.dirInput.addEventListener('change', uploadFiles);
-            
+
             dom.refreshBtn.addEventListener('click', () => {
                 dom.refreshBtn.style.transform = 'rotate(360deg)';
                 setTimeout(() => dom.refreshBtn.style.transform = 'none', 500);
-                fetchFiles();
+                browseTo(currentPath);
             });
 
-            // Initial load
-            fetchFiles();
+            dom.backBtn.addEventListener('click', () => {
+                const parts = currentPath.split('/').filter(Boolean);
+                parts.pop();
+                browseTo(parts.join('/'));
+            });
 
-            // Auto-refresh every 5s
-            setInterval(fetchFiles, 5000);
+            dom.downloadFolderBtn.addEventListener('click', () => downloadCurrentFolder());
+
+            dom.sortSelect.addEventListener('change', () => {
+                currentSort = dom.sortSelect.value;
+                // Re-render with new sort
+                if (currentItems.length) {
+                    renderBrowse({ status: 'ok', path: currentPath, items: currentItems, parent: currentPath ? currentPath.split('/').slice(0, -1).join('/') : null });
+                }
+            });
+
+            // Initial load — try browse API first, fallback to flat
+            browseTo('');
+
+            // Auto-refresh every 10s
+            setInterval(() => browseTo(currentPath), 10000);
         }
     </script>
 </body>

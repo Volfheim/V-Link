@@ -1,4 +1,4 @@
-﻿"""
+"""
 V-Link - HTTP Server
 Async server for receiving files over local network.
 """
@@ -24,6 +24,7 @@ from aiohttp import web
 from cryptography.fernet import Fernet
 
 from core.i18n import i18n, t
+from network.zip_streamer import stream_folder_as_zip, estimate_folder_size
 
 
 CHUNK_SIZE = 1024 * 1024  # 1 MB
@@ -95,6 +96,7 @@ class TransferServer:
         self.mobile_token_expire_at = 0.0
         self._mobile_template_cache: Optional[str] = None
         self._logo_b64_cache: Optional[str] = None
+        self._active_uploads = {}
 
         self.on_transfer_start: Optional[Callable] = None
         self.on_transfer_progress: Optional[Callable] = None
@@ -132,6 +134,9 @@ class TransferServer:
         self.app.router.add_get('/api/mobile/files', self._handle_mobile_files)
         self.app.router.add_post('/api/mobile/upload', self._handle_mobile_upload)
         self.app.router.add_get('/api/mobile/download/{filename:.+}', self._handle_mobile_download)
+        self.app.router.add_get('/api/mobile/browse', self._handle_mobile_browse)
+        self.app.router.add_get('/api/mobile/download-folder/{path:.+}', self._handle_mobile_download_folder)
+        self.app.router.add_get('/api/mobile/file-info/{path:.+}', self._handle_mobile_file_info)
 
     @classmethod
     def _is_vpn_iface_name(cls, iface_name: str) -> bool:
@@ -391,6 +396,22 @@ class TransferServer:
             "selectedFiles": t("Выбрано файлов: {count}"),
             "selectedFolder": t("Папка: {name}"),
             "uploadBytes": t("{sent} из {total}"),
+            "folders": t("Папки"),
+            "files": t("Файлы"),
+            "back": t("Назад"),
+            "downloadFolder": t("Скачать папку"),
+            "downloadAll": t("Скачать всё"),
+            "downloading": t("Скачивание..."),
+            "downloaded": t("Скачано"),
+            "folderTooLarge": t("Папка слишком большая для скачивания (макс. 4 ГБ)"),
+            "itemCount": t("{dirs} папок, {files} файлов"),
+            "totalSize": t("Общий размер: {size}"),
+            "preparing": t("Подготовка ZIP..."),
+            "sortByName": t("По имени"),
+            "sortByDate": t("По дате"),
+            "sortBySize": t("По размеру"),
+            "queueProgress": t("Загружено: {index} из {total} файлов"),
+            "fileSkipped": t("Пропущен (уже загружен): {name}"),
         }
 
     def _load_mobile_html(self) -> str:
@@ -467,11 +488,138 @@ class TransferServer:
             return self._mobile_forbidden_json()
 
         os.makedirs(self.download_dir, exist_ok=True)
+        
+        import urllib.parse
+        
+        # Поддержка пофайловой очереди загрузки
+        x_upload_path = request.headers.get("X-Upload-Path", "")
+        
+        if x_upload_path:
+            # Режим пофайловой загрузки с очередью
+            transfer_id = request.headers.get("X-Upload-Transfer-Id")
+            if not transfer_id:
+                transfer_id = f"mobile-queue-{int(time.time() * 1000)}"
+                
+            try:
+                expected_total = int(request.headers.get("X-Upload-Total-Size", "0") or "0")
+            except ValueError:
+                expected_total = 0
+                
+            try:
+                file_index = int(request.headers.get("X-Upload-File-Index", "0") or "0")
+                file_count = int(request.headers.get("X-Upload-File-Count", "1") or "1")
+            except ValueError:
+                file_index = 0
+                file_count = 1
+                
+            upload_name = urllib.parse.unquote(request.headers.get("X-Upload-Name", ""))
+            
+            # Инициализация сессии загрузки
+            if transfer_id not in self._active_uploads:
+                root_name = self._safe_relative_path(upload_name) or "mobile-upload"
+                base_dir = self._unique_path(os.path.join(self.download_dir, root_name))
+                self._active_uploads[transfer_id] = {
+                    "base_dir": base_dir,
+                    "started": time.time(),
+                    "received_total": 0,
+                    "last_update": time.time()
+                }
+                if self.on_transfer_start:
+                    self.on_transfer_start(transfer_id, root_name, expected_total, False)
+                    
+            session = self._active_uploads[transfer_id]
+            base_dir = session["base_dir"]
+            
+            rel_path = self._safe_relative_path(urllib.parse.unquote(x_upload_path))
+            if not rel_path:
+                return web.json_response({"status": "error", "message": "Invalid file path"}, status=400)
+                
+            filepath = os.path.join(base_dir, rel_path)
+            # Защита от directory traversal
+            if not os.path.abspath(filepath).startswith(os.path.abspath(base_dir)):
+                return web.json_response({"status": "error", "message": "Access denied"}, status=403)
+                
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            
+            try:
+                bytes_sent_before = int(request.headers.get("X-Upload-Bytes-Sent", "0") or "0")
+            except ValueError:
+                bytes_sent_before = 0
+                
+            received = 0
+            
+            try:
+                # Читаем данные файла. Это может быть multipart или raw body
+                if "multipart/form-data" in request.content_type:
+                    reader = await request.multipart()
+                    field = await reader.next()
+                    if field is None:
+                        return web.json_response({"status": "error", "message": "Empty multipart"}, status=400)
+                    async with aiofiles.open(filepath, "wb") as f:
+                        while True:
+                            chunk = await field.read_chunk(self.chunk_size_bytes)
+                            if not chunk:
+                                break
+                            await f.write(chunk)
+                            received += len(chunk)
+                            session["received_total"] += len(chunk)
+                            
+                            now = time.time()
+                            if now - session["last_update"] > 0.2 and self.on_transfer_progress:
+                                elapsed = max(0.001, now - session["started"])
+                                total_received = bytes_sent_before + received
+                                self.on_transfer_progress(transfer_id, total_received, total_received / elapsed)
+                                session["last_update"] = now
+                else:
+                    async with aiofiles.open(filepath, "wb") as f:
+                        while True:
+                            chunk = await request.content.read(self.chunk_size_bytes)
+                            if not chunk:
+                                break
+                            await f.write(chunk)
+                            received += len(chunk)
+                            session["received_total"] += len(chunk)
+                            
+                            now = time.time()
+                            if now - session["last_update"] > 0.2 and self.on_transfer_progress:
+                                elapsed = max(0.001, now - session["started"])
+                                total_received = bytes_sent_before + received
+                                self.on_transfer_progress(transfer_id, total_received, total_received / elapsed)
+                                session["last_update"] = now
+                                
+                # Если это последний файл в очереди
+                if file_index >= file_count - 1:
+                    if self.on_transfer_progress:
+                        elapsed = max(0.001, time.time() - session["started"])
+                        self.on_transfer_progress(transfer_id, expected_total, expected_total / elapsed)
+                    if self.on_transfer_complete:
+                        self.on_transfer_complete(transfer_id, base_dir)
+                    self._active_uploads.pop(transfer_id, None)
+                    
+                return web.json_response({
+                    "status": "ok", 
+                    "transfer_id": transfer_id,
+                    "file": {
+                        "name": rel_path,
+                        "size": received
+                    }
+                })
+                
+            except Exception as e:
+                if filepath and os.path.exists(filepath):
+                    try:
+                        os.remove(filepath)
+                    except OSError:
+                        pass
+                if self.on_transfer_error:
+                    self.on_transfer_error(transfer_id, f"Mobile queue upload error: {e}")
+                return web.json_response({"status": "error", "message": str(e)}, status=500)
+        
+        # Режим обычной загрузки (не очереди)
         transfer_id = f"mobile-{int(time.time() * 1000)}"
         saved = []
 
         try:
-            import urllib.parse
             try:
                 expected_total = int(request.headers.get("X-Upload-Total-Size", "0") or "0")
             except ValueError:

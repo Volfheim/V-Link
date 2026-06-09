@@ -2,6 +2,14 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [2.4.0] - 2026-06-09
+### Mobile Folder Transfer & OOM protection
+* Added folder navigation (breadcrumbs) and folder contents listing in the mobile web interface.
+* Implemented queue-based file-by-file upload from mobile phone to PC, preventing browser OOM crashes on large folders (up to 600 GB).
+* Added checkmarks for already uploaded files to support skipping duplicates and resuming transfer after network dropouts.
+* Added on-the-fly ZIP streaming for downloading folders from PC to phone (restricted to 4 GB).
+* Added direct browser download for files larger than 50 MB, bypassing JavaScript buffer to avoid tab crashes.
+
 ## [2.3.2] - 2026-05-13
 ### Mobile connectivity
 * Removed the alternate-address selector from the phone connection dialog.
