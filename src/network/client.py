@@ -119,6 +119,64 @@ class TransferClient:
                     await asyncio.sleep(0.2)
         return False
 
+    async def pick_reachable_endpoint(
+        self,
+        candidates: List[tuple[str, int]],
+        timeout: float = 0.75,
+    ) -> tuple[str, int]:
+        """Return the first responsive endpoint without stacking probe timeouts."""
+        endpoints: List[tuple[str, int]] = []
+        for host, port in candidates:
+            endpoint = (str(host).strip(), int(port))
+            if endpoint[0] and endpoint not in endpoints:
+                endpoints.append(endpoint)
+
+        if not endpoints:
+            raise ValueError("No transfer endpoints provided")
+        if len(endpoints) == 1:
+            return endpoints[0]
+
+        tasks = {
+            asyncio.create_task(self.ping(host, port, timeout=timeout, retries=1)): endpoint
+            for endpoint in endpoints
+            for host, port in [endpoint]
+        }
+        pending = set(tasks)
+        deadline = asyncio.get_running_loop().time() + max(0.1, timeout)
+
+        try:
+            while pending:
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    break
+                done, pending = await asyncio.wait(
+                    pending,
+                    timeout=remaining,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if not done:
+                    break
+
+                responsive = []
+                for task in done:
+                    try:
+                        if task.result():
+                            responsive.append(tasks[task])
+                    except Exception:
+                        continue
+                if responsive:
+                    return min(responsive, key=endpoints.index)
+        finally:
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
+        # Discovery already ranks the selected endpoint first. Preserve it when
+        # probes are blocked by a VPN or firewall and let the upload report the
+        # actual connection result.
+        return endpoints[0]
+
     async def send_file(
         self,
         filepath: str,
