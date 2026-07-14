@@ -531,51 +531,165 @@ class TransferServer:
             except ValueError:
                 file_index = 0
                 file_count = 1
-                
+
+            file_count = max(1, file_count)
+            if file_index < 0 or file_index >= file_count:
+                return web.json_response(
+                    {"status": "error", "message": "Invalid file index"},
+                    status=400,
+                )
+
+            expected_file_size = None
+            expected_file_size_raw = request.headers.get("X-Upload-File-Size")
+            if expected_file_size_raw is not None:
+                try:
+                    expected_file_size = int(expected_file_size_raw)
+                except ValueError:
+                    return web.json_response(
+                        {"status": "error", "message": "Invalid file size"},
+                        status=400,
+                    )
+                if expected_file_size < 0:
+                    return web.json_response(
+                        {"status": "error", "message": "Invalid file size"},
+                        status=400,
+                    )
+
+            skip_file = request.headers.get("X-Upload-Skip", "").strip() == "1"
             upload_name = urllib.parse.unquote(request.headers.get("X-Upload-Name", ""))
-            
+            safe_upload_name = self._safe_relative_path(upload_name)
+            root_name = os.path.basename(safe_upload_name) if safe_upload_name else ""
+            rel_path = self._safe_relative_path(urllib.parse.unquote(x_upload_path))
+            if not rel_path:
+                return web.json_response({"status": "error", "message": "Invalid file path"}, status=400)
+
+            upload_type = request.headers.get("X-Upload-Type", "").strip().lower()
+            if upload_type == "folder":
+                is_folder_upload = True
+            elif upload_type == "files":
+                is_folder_upload = False
+            else:
+                # Compatibility with cached pages from older releases.
+                root_prefix = root_name + os.path.sep if root_name else ""
+                is_folder_upload = bool(root_prefix and rel_path.startswith(root_prefix))
+
+            if is_folder_upload:
+                root_name = root_name or "mobile-upload"
+                root_prefix = root_name + os.path.sep
+                if rel_path.startswith(root_prefix):
+                    rel_path = rel_path[len(root_prefix):]
+                if not rel_path:
+                    return web.json_response(
+                        {"status": "error", "message": "Invalid file path"},
+                        status=400,
+                    )
+            else:
+                rel_path = os.path.basename(rel_path)
+
             # Инициализация сессии загрузки
             if transfer_id not in self._active_uploads:
-                root_name = self._safe_relative_path(upload_name) or "mobile-upload"
-                base_dir = self._unique_path(os.path.join(self.download_dir, root_name))
+                if is_folder_upload:
+                    base_dir = os.path.join(self.download_dir, root_name)
+                    if os.path.exists(base_dir) and not os.path.isdir(base_dir):
+                        base_dir = self._unique_path(base_dir)
+                    os.makedirs(base_dir, exist_ok=True)
+                    display_name = root_name
+                else:
+                    base_dir = self.download_dir
+                    display_name = safe_upload_name or rel_path
+
                 self._active_uploads[transfer_id] = {
                     "base_dir": base_dir,
+                    "is_folder": is_folder_upload,
+                    "completed_paths": [],
                     "started": time.time(),
                     "received_total": 0,
                     "last_update": time.time()
                 }
                 if self.on_transfer_start:
-                    self.on_transfer_start(transfer_id, root_name, expected_total, False)
-                    
+                    self.on_transfer_start(transfer_id, display_name, expected_total, False)
+
             session = self._active_uploads[transfer_id]
+            if bool(session.get("is_folder")) != is_folder_upload:
+                self._active_uploads.pop(transfer_id, None)
+                return web.json_response(
+                    {"status": "error", "message": "Upload type changed during transfer"},
+                    status=400,
+                )
+
             base_dir = session["base_dir"]
-            
-            rel_path = self._safe_relative_path(urllib.parse.unquote(x_upload_path))
-            if not rel_path:
-                return web.json_response({"status": "error", "message": "Invalid file path"}, status=400)
-                
-            filepath = os.path.join(base_dir, rel_path)
-            # Защита от directory traversal
-            if not os.path.abspath(filepath).startswith(os.path.abspath(base_dir)):
+
+            if is_folder_upload:
+                filepath = os.path.join(base_dir, rel_path)
+            elif skip_file:
+                filepath = os.path.join(base_dir, rel_path)
+            else:
+                filepath = self._unique_path(os.path.join(base_dir, rel_path))
+
+            base_abs = os.path.normcase(os.path.abspath(base_dir))
+            filepath_abs = os.path.normcase(os.path.abspath(filepath))
+            try:
+                inside_base = os.path.commonpath([base_abs, filepath_abs]) == base_abs
+            except ValueError:
+                inside_base = False
+            if not inside_base:
                 return web.json_response({"status": "error", "message": "Access denied"}, status=403)
-                
+
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            
+
+            if skip_file:
+                try:
+                    actual_size = os.path.getsize(filepath)
+                except OSError:
+                    return web.json_response(
+                        {"status": "error", "message": "Skipped file no longer exists"},
+                        status=409,
+                    )
+                if expected_file_size is not None and actual_size != expected_file_size:
+                    return web.json_response(
+                        {"status": "error", "message": "Skipped file size changed"},
+                        status=409,
+                    )
+
+                session["completed_paths"].append(filepath)
+                if file_index >= file_count - 1:
+                    if self.on_transfer_progress:
+                        elapsed = max(0.001, time.time() - session["started"])
+                        self.on_transfer_progress(transfer_id, expected_total, expected_total / elapsed)
+                    if self.on_transfer_complete:
+                        if is_folder_upload:
+                            completed_path = base_dir
+                        elif file_count == 1:
+                            completed_path = filepath
+                        else:
+                            completed_path = self.download_dir
+                        self.on_transfer_complete(transfer_id, completed_path)
+                    self._active_uploads.pop(transfer_id, None)
+
+                return web.json_response({
+                    "status": "ok",
+                    "transfer_id": transfer_id,
+                    "skipped": True,
+                    "file": {"name": rel_path, "size": actual_size},
+                })
+
+            part_path = f"{filepath}.vlink-{secrets.token_hex(8)}.part"
+
             try:
                 bytes_sent_before = int(request.headers.get("X-Upload-Bytes-Sent", "0") or "0")
             except ValueError:
                 bytes_sent_before = 0
-                
+
             received = 0
-            
+
             try:
                 # Читаем данные файла. Это может быть multipart или raw body
                 if "multipart/form-data" in request.content_type:
                     reader = await request.multipart()
                     field = await reader.next()
                     if field is None:
-                        return web.json_response({"status": "error", "message": "Empty multipart"}, status=400)
-                    async with aiofiles.open(filepath, "wb") as f:
+                        raise ValueError("Empty multipart")
+                    async with aiofiles.open(part_path, "wb") as f:
                         while True:
                             chunk = await field.read_chunk(self.chunk_size_bytes)
                             if not chunk:
@@ -591,7 +705,7 @@ class TransferServer:
                                 self.on_transfer_progress(transfer_id, total_received, total_received / elapsed)
                                 session["last_update"] = now
                 else:
-                    async with aiofiles.open(filepath, "wb") as f:
+                    async with aiofiles.open(part_path, "wb") as f:
                         while True:
                             chunk = await request.content.read(self.chunk_size_bytes)
                             if not chunk:
@@ -606,16 +720,30 @@ class TransferServer:
                                 total_received = bytes_sent_before + received
                                 self.on_transfer_progress(transfer_id, total_received, total_received / elapsed)
                                 session["last_update"] = now
-                                
+
+                if expected_file_size is not None and received != expected_file_size:
+                    raise ValueError(
+                        f"Invalid upload size: expected {expected_file_size}, got {received}"
+                    )
+
+                os.replace(part_path, filepath)
+                session["completed_paths"].append(filepath)
+
                 # Если это последний файл в очереди
                 if file_index >= file_count - 1:
                     if self.on_transfer_progress:
                         elapsed = max(0.001, time.time() - session["started"])
                         self.on_transfer_progress(transfer_id, expected_total, expected_total / elapsed)
                     if self.on_transfer_complete:
-                        self.on_transfer_complete(transfer_id, base_dir)
+                        if is_folder_upload:
+                            completed_path = base_dir
+                        elif file_count == 1:
+                            completed_path = filepath
+                        else:
+                            completed_path = self.download_dir
+                        self.on_transfer_complete(transfer_id, completed_path)
                     self._active_uploads.pop(transfer_id, None)
-                    
+
                 return web.json_response({
                     "status": "ok", 
                     "transfer_id": transfer_id,
@@ -626,11 +754,12 @@ class TransferServer:
                 })
                 
             except Exception as e:
-                if filepath and os.path.exists(filepath):
+                if os.path.exists(part_path):
                     try:
-                        os.remove(filepath)
+                        os.remove(part_path)
                     except OSError:
                         pass
+                self._active_uploads.pop(transfer_id, None)
                 if self.on_transfer_error:
                     self.on_transfer_error(transfer_id, f"Mobile queue upload error: {e}")
                 return web.json_response({"status": "error", "message": str(e)}, status=500)
