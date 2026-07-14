@@ -2,6 +2,13 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [2.4.5] - 2026-07-14
+### Mobile File & Folder Transfers
+* Fixed single files uploaded from a phone being placed inside redundant wrapper folders.
+* Fixed duplicated root directories when uploading folders from the mobile web interface.
+* Improved folder upload resume behavior when existing files are skipped.
+* Added atomic mobile file writes so interrupted uploads do not replace existing files.
+
 ## [2.4.4] - 2026-07-14
 ### Notifications
 * Kept the Explorer action visible for transfers with long file names.

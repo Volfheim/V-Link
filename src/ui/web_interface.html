@@ -1063,15 +1063,33 @@
             }
         }
 
-        // --- Upload queue for large folders ---
+        // --- Upload queue for files and folders ---
         async function uploadFiles(e) {
             const files = Array.from(e.target.files || []);
             if (!files.length) return;
 
             const totalBytes = files.reduce((sum, file) => sum + (file.size || 0), 0);
-            const firstRel = files[0].webkitRelativePath || files[0].name || '';
-            const rootName = firstRel.includes('/') ? firstRel.split('/')[0] : '';
-            const uploadName = rootName || (files.length === 1 ? files[0].name : 'mobile-upload');
+            const normalizePath = (value) => String(value || '')
+                .replace(/\\/g, '/')
+                .replace(/^\/+|\/+$/g, '');
+            const selectedAsFolder = e.target === dom.dirInput;
+            const firstRel = normalizePath(files[0].webkitRelativePath);
+            const rootName = selectedAsFolder && firstRel.includes('/')
+                ? firstRel.split('/')[0]
+                : '';
+            const isFolderUpload = Boolean(rootName);
+            const uploadName = isFolderUpload
+                ? rootName
+                : (files.length === 1 ? files[0].name : 'mobile-upload');
+
+            const relativePathFor = (file) => {
+                if (!isFolderUpload) return file.name;
+                const sourcePath = normalizePath(file.webkitRelativePath);
+                const rootPrefix = rootName + '/';
+                return sourcePath.startsWith(rootPrefix)
+                    ? sourcePath.slice(rootPrefix.length)
+                    : file.name;
+            };
 
             dom.uploadDetail.classList.remove('hidden');
             dom.uploadDetailTitle.textContent = tr('uploading', 'Uploading...');
@@ -1115,15 +1133,34 @@
                 }
 
                 const file = files[fileIndex];
-                const relPath = file.webkitRelativePath || file.name;
+                const relPath = relativePathFor(file);
+                const destinationPath = isFolderUpload ? `${rootName}/${relPath}` : relPath;
                 
                 // Быстрая проверка: если файл уже есть на сервере, пропускаем его
                 try {
-                    const infoUrl = `/api/mobile/file-info/${encodeURIComponent(relPath)}?token=${encodeURIComponent(TOKEN)}`;
+                    const infoUrl = `/api/mobile/file-info/${encodeURIComponent(destinationPath)}?token=${encodeURIComponent(TOKEN)}`;
                     const infoRes = await fetch(infoUrl);
                     if (infoRes.ok) {
                         const infoData = await infoRes.json();
                         if (infoData.status === 'ok' && infoData.type === 'file' && Number(infoData.size) === file.size) {
+                            const skipRes = await fetch(`/api/mobile/upload?token=${encodeURIComponent(TOKEN)}`, {
+                                method: 'POST',
+                                headers: {
+                                    'X-Upload-Path': encodeURIComponent(relPath),
+                                    'X-Upload-Transfer-Id': transferId,
+                                    'X-Upload-Total-Size': String(totalBytes),
+                                    'X-Upload-File-Index': String(fileIndex),
+                                    'X-Upload-File-Count': String(files.length),
+                                    'X-Upload-Name': encodeURIComponent(uploadName),
+                                    'X-Upload-Type': isFolderUpload ? 'folder' : 'files',
+                                    'X-Upload-File-Size': String(file.size),
+                                    'X-Upload-Bytes-Sent': String(uploadedBytesBefore),
+                                    'X-Upload-Skip': '1',
+                                    'Content-Type': 'application/octet-stream'
+                                }
+                            });
+                            if (!skipRes.ok) throw new Error(`Skip confirmation failed: HTTP ${skipRes.status}`);
+
                             // Файл уже на сервере, пропускаем
                             uploadedBytesBefore += file.size;
                             fileIndex++;
@@ -1146,6 +1183,8 @@
                 xhr.setRequestHeader('X-Upload-File-Index', String(fileIndex));
                 xhr.setRequestHeader('X-Upload-File-Count', String(files.length));
                 xhr.setRequestHeader('X-Upload-Name', encodeURIComponent(uploadName));
+                xhr.setRequestHeader('X-Upload-Type', isFolderUpload ? 'folder' : 'files');
+                xhr.setRequestHeader('X-Upload-File-Size', String(file.size));
                 xhr.setRequestHeader('X-Upload-Bytes-Sent', String(uploadedBytesBefore));
                 xhr.setRequestHeader('Content-Type', 'application/octet-stream');
 
