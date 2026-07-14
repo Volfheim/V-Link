@@ -2,6 +2,22 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [2.4.4] - 2026-07-14
+### Notifications
+* Kept the Explorer action visible for transfers with long file names.
+* Moved transfer size before the file name and removed redundant notification text.
+
+## [2.4.3] - 2026-07-14
+### Stability
+* Prevented unhandled PyQt callback exceptions from terminating the application through `qFatal`.
+* Added persistent crash diagnostics to `~/.v-link/vlink-crash.log`.
+* Guarded stale qasync timer events that may appear after a long sleep or tray idle period.
+* Background task failures are now consumed and logged instead of being silently discarded.
+
+### Notifications
+* Clicking a completed-transfer notification now opens the folder or selects the file in Windows Explorer.
+* Transfer notifications now include a clear click action and stay visible longer.
+
 ## [2.4.2] - 2026-06-09
 ### Features & Improvements
 * **WebDAV Support:** Added read-only WebDAV server (supporting `OPTIONS`, `PROPFIND`, `GET`, `HEAD`) to easily transfer large folders (500+ GB) from PC to phone. Directly accessible from native File apps on iOS/Android.

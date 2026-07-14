@@ -17,6 +17,8 @@ import aiohttp
 from PyQt6.QtCore import QBuffer, QIODevice, QObject, QTimer
 from PyQt6.QtGui import QGuiApplication, QImage
 
+from crash_reporter import record_exception
+
 
 class ClipboardSyncManager(QObject):
     """Bidirectional clipboard sync over local HTTP endpoints."""
@@ -116,9 +118,25 @@ class ClipboardSyncManager(QObject):
         self._last_sent_digest = digest
         self._last_send_ts = now
         if self._loop and self._loop.is_running():
-            self._loop.call_soon_threadsafe(
-                lambda: asyncio.create_task(self._broadcast_payload(payload))
-            )
+            try:
+                task = self._loop.create_task(self._broadcast_payload(payload))
+                task.add_done_callback(self._on_broadcast_done)
+            except Exception as exc:
+                record_exception("clipboard_schedule", exc)
+
+    @staticmethod
+    def _on_broadcast_done(task: asyncio.Task):
+        if task.cancelled():
+            return
+        try:
+            error = task.exception()
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            record_exception("clipboard_task_inspect", exc)
+            return
+        if error:
+            record_exception("clipboard_broadcast", error)
 
     def _build_payload_from_local_clipboard(self) -> Optional[dict]:
         if not self._clipboard:

@@ -3,7 +3,6 @@ V-Link - Transfer List Widget
 """
 
 import os
-import subprocess
 import time
 from typing import Dict
 
@@ -20,6 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.i18n import t
+from core.explorer import reveal_in_explorer
 
 
 class TransferItem(QFrame):
@@ -154,11 +154,8 @@ class TransferItem(QFrame):
         self.filepath = filepath
 
     def _show_in_explorer(self):
-        if self.filepath and os.path.exists(self.filepath):
-            if os.path.isdir(self.filepath):
-                subprocess.run(['explorer', self.filepath])
-            else:
-                subprocess.run(['explorer', '/select,', self.filepath])
+        if self.filepath:
+            reveal_in_explorer(self.filepath)
 
     def mark_error(self, error: str):
         self.timer.stop()

@@ -59,6 +59,15 @@ if "--self-test" in sys.argv:
 _update_ready_flag = _consume_arg("--update-ready-flag")
 _show_after_update = _consume_switch("--show-after-update")
 
+from crash_reporter import (
+    install_asyncio_exception_handler,
+    install_exception_hooks,
+    install_qasync_timer_guard,
+)
+
+_crash_log_path = install_exception_hooks()
+install_qasync_timer_guard(_crash_log_path)
+
 import asyncio
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
@@ -124,6 +133,7 @@ def main():
 
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)
+    install_asyncio_exception_handler(loop, _crash_log_path)
 
     window = MainWindow(settings=settings)
     if _show_after_update:

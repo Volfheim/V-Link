@@ -8,7 +8,7 @@ import socket
 import subprocess
 import sys
 import time
-from typing import Dict, List, Optional
+from typing import Any, Coroutine, Dict, List, Optional
 
 from PyQt6.QtCore import Q_ARG, QMetaObject, Qt, QTimer, pyqtSlot
 from PyQt6.QtGui import QAction, QCloseEvent, QIcon
@@ -30,6 +30,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core import Settings, Updater, i18n, set_autostart, t
 from core.clipboard_sync import ClipboardSyncManager
+from core.explorer import reveal_in_explorer
+from crash_reporter import record_exception, record_message
 from version import __version__
 from network import DeviceDiscovery, RelayClient, TransferClient, TransferServer
 from ui import DeviceList, DropZone, TransferList, TransferSummaryDialog, get_stylesheet
@@ -64,6 +66,8 @@ class MainWindow(QMainWindow):
         self._services_starting = False
         self._quitting = False
         self._transfer_directions: Dict[str, tuple] = {}
+        self._background_tasks: set[asyncio.Task] = set()
+        self._notification_target_path = ""
         # Keep reference to manual update check dialog to prevent GC
         self._progress_dialog = None
         self._check_task = None
@@ -282,12 +286,81 @@ class MainWindow(QMainWindow):
 
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.activated.connect(self._on_tray_activated)
+        self.tray_icon.messageClicked.connect(self._open_notification_target)
         self.tray_icon.show()
+
+    def _show_tray_message(
+        self,
+        message: str,
+        timeout_ms: int,
+        target_path: str = "",
+        title: str = "V-Link",
+    ):
+        self._notification_target_path = str(target_path or "").strip()
+        self.tray_icon.showMessage(
+            title,
+            message,
+            QSystemTrayIcon.MessageIcon.Information,
+            timeout_ms,
+        )
+
+    @pyqtSlot()
+    def _open_notification_target(self):
+        target_path = self._notification_target_path
+        if not target_path:
+            self._show_window()
+            return
+        if reveal_in_explorer(target_path):
+            return
+
+        self._show_window()
+        QMessageBox.warning(
+            self,
+            "V-Link",
+            t("Не удалось открыть файл в Проводнике:\n{path}", path=target_path),
+        )
 
     def _connect_signals(self):
         self.drop_zone.files_dropped.connect(self._on_files_dropped)
         self.device_list.device_selected.connect(self._on_device_selected)
         self.device_list.refresh_clicked.connect(self._refresh_devices)
+
+    def _schedule_task(
+        self,
+        coroutine: Coroutine[Any, Any, Any],
+        source: str,
+    ) -> Optional[asyncio.Task]:
+        """Schedule a GUI-originated coroutine and always consume its exception."""
+        if not self.loop or self.loop.is_closed():
+            coroutine.close()
+            record_message(source, "Task was not scheduled because the event loop is unavailable")
+            return None
+
+        try:
+            task = self.loop.create_task(coroutine)
+        except Exception as exc:
+            coroutine.close()
+            record_exception(source, exc)
+            return None
+
+        self._background_tasks.add(task)
+
+        def task_done(done_task: asyncio.Task):
+            self._background_tasks.discard(done_task)
+            if done_task.cancelled():
+                return
+            try:
+                error = done_task.exception()
+            except asyncio.CancelledError:
+                return
+            except Exception as exc:
+                record_exception(f"{source}:inspect", exc)
+                return
+            if error:
+                record_exception(source, error)
+
+        task.add_done_callback(task_done)
+        return task
 
     @staticmethod
     def _is_hotspot_ip(ip: str) -> bool:
@@ -519,7 +592,7 @@ class MainWindow(QMainWindow):
                         await self.relay.refresh_peers()
                     except Exception as e:
                         self._on_server_error(f"Relay refresh error: {e}")
-            asyncio.run_coroutine_threadsafe(do_refresh(), self.loop)
+            self._schedule_task(do_refresh(), "refresh_devices")
 
     def _open_settings(self):
         old_port = self.settings.port
@@ -568,7 +641,7 @@ class MainWindow(QMainWindow):
                 await self._restart_services()
                 if self._low_power_mode:
                     await self.enter_low_power_mode()
-            asyncio.run_coroutine_threadsafe(restart_flow(), self.loop)
+            self._schedule_task(restart_flow(), "restart_services")
 
         if old_language != self.settings.language:
             i18n.load(self.settings.language)
@@ -671,9 +744,12 @@ class MainWindow(QMainWindow):
         
         self._progress_dialog.show()
 
-        # Run check in the main asyncio loop (we are in main thread, so ensure_future is safe)
+        # Run the check in the shared Qt/asyncio loop.
         if self.loop:
-            self._check_task = asyncio.ensure_future(self._run_manual_check(settings_dialog))
+            self._check_task = self._schedule_task(
+                self._run_manual_check(settings_dialog),
+                "manual_update_check",
+            )
 
     def _on_manual_check_canceled(self):
         if hasattr(self, '_check_task') and self._check_task:
@@ -739,7 +815,7 @@ class MainWindow(QMainWindow):
 
     def _schedule_network_sync(self):
         if self.loop and self.discovery:
-            asyncio.run_coroutine_threadsafe(self._sync_network_state(), self.loop)
+            self._schedule_task(self._sync_network_state(), "network_sync")
 
     async def _sync_network_state(self):
         if not self.discovery:
@@ -907,7 +983,7 @@ class MainWindow(QMainWindow):
             # User requested: "check updates at program launch, cache 12h only for tray restore"
             # So we force check here.
             self._init_updater()
-            asyncio.ensure_future(self._check_for_update(force=True))
+            self._schedule_task(self._check_for_update(force=True), "startup_update_check")
         except Exception:
             self._services_ready = False
             await self.stop_services()
@@ -1142,7 +1218,7 @@ class MainWindow(QMainWindow):
     @pyqtSlot(list)
     def _on_files_dropped(self, files: List[str]):
         if self._low_power_mode and self.loop:
-            asyncio.run_coroutine_threadsafe(self.exit_low_power_mode(), self.loop)
+            self._schedule_task(self.exit_low_power_mode(), "drop_exit_low_power")
             QMetaObject.invokeMethod(self, "_show_services_starting", Qt.ConnectionType.QueuedConnection)
             return
 
@@ -1269,7 +1345,7 @@ class MainWindow(QMainWindow):
             QMetaObject.invokeMethod(self, "_show_device_unavailable", Qt.ConnectionType.QueuedConnection)
 
         if self.loop:
-            asyncio.run_coroutine_threadsafe(send_with_ping(), self.loop)
+            self._schedule_task(send_with_ping(), "send_files")
 
     @pyqtSlot()
     def _show_device_unavailable(self):
@@ -1348,20 +1424,19 @@ class MainWindow(QMainWindow):
 
     def _on_transfer_complete(self, transfer_id: str, filepath: str):
         self.transfer_list.complete_transfer(transfer_id, filepath)
+        direction, size = self._transfer_directions.pop(transfer_id, ("in", 0))
         if self.tray_icon.isVisible():
-            direction, size = self._transfer_directions.pop(transfer_id, ("in", 0))
-            name = os.path.basename(filepath)
+            name = os.path.basename(os.path.normpath(filepath)) or filepath
             if direction == "in":
-                msg = t("📥 Получен: {name}", name=name)
+                title = t("Получен файл · Открыть")
             else:
-                msg = t("📤 Отправлен: {name}", name=name)
-            if size > 0:
-                msg += f" ({self._human_size(size)})"
-            self.tray_icon.showMessage(
-                "V-Link",
+                title = t("Файл отправлен · Показать")
+            msg = f"{self._human_size(size)} · {name}" if size > 0 else name
+            self._show_tray_message(
                 msg,
-                QSystemTrayIcon.MessageIcon.Information,
-                3000,
+                timeout_ms=6000,
+                target_path=filepath,
+                title=title,
             )
 
     def _is_security_mismatch_error(self, error: str) -> bool:
@@ -1433,12 +1508,10 @@ class MainWindow(QMainWindow):
             event.ignore()
             self.hide()
             if self.loop:
-                asyncio.run_coroutine_threadsafe(self.enter_low_power_mode(), self.loop)
-            self.tray_icon.showMessage(
-                "V-Link",
+                self._schedule_task(self.enter_low_power_mode(), "tray_enter_low_power")
+            self._show_tray_message(
                 t("Программа свёрнута в трей"),
-                QSystemTrayIcon.MessageIcon.Information,
-                2000,
+                timeout_ms=2000,
             )
             return
 
@@ -1453,17 +1526,20 @@ class MainWindow(QMainWindow):
             self._show_window()
 
     def _show_window(self):
-        self.setWindowState(
-            (self.windowState() & ~Qt.WindowState.WindowMinimized)
-            | Qt.WindowState.WindowActive
-        )
-        self.showNormal()
-        self.show()
-        self.raise_()
-        self.activateWindow()
-        if self.loop:
-            asyncio.run_coroutine_threadsafe(self.exit_low_power_mode(), self.loop)
-            asyncio.run_coroutine_threadsafe(self._check_for_update(), self.loop)
+        try:
+            self.setWindowState(
+                (self.windowState() & ~Qt.WindowState.WindowMinimized)
+                | Qt.WindowState.WindowActive
+            )
+            self.showNormal()
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            if self.loop:
+                self._schedule_task(self.exit_low_power_mode(), "tray_exit_low_power")
+                self._schedule_task(self._check_for_update(), "tray_update_check")
+        except Exception as exc:
+            record_exception("show_window", exc)
 
     @pyqtSlot()
     def _finalize_quit(self):
@@ -1528,7 +1604,7 @@ class MainWindow(QMainWindow):
 
         if msg.clickedButton() == btn_update:
             if self.loop:
-                asyncio.run_coroutine_threadsafe(self._do_update(), self.loop)
+                self._schedule_task(self._do_update(), "download_update")
         elif msg.clickedButton() == btn_skip:
             self.updater.skip_version()
             self.update_btn.setVisible(False)
@@ -1629,10 +1705,7 @@ class MainWindow(QMainWindow):
         self.tray_icon.hide()
 
         if self.loop:
-            try:
-                asyncio.run_coroutine_threadsafe(self.stop_services(), self.loop)
-            except Exception:
-                pass
+            self._schedule_task(self.stop_services(), "update_stop_services")
 
         QTimer.singleShot(50, self.close)
         QTimer.singleShot(700, QApplication.quit)
@@ -1647,8 +1720,11 @@ class MainWindow(QMainWindow):
         self.tray_icon.hide()
 
         if self.loop:
-            future = asyncio.run_coroutine_threadsafe(self.stop_services(), self.loop)
-            future.add_done_callback(
+            task = self._schedule_task(self.stop_services(), "quit_stop_services")
+            if not task:
+                self._finalize_quit()
+                return
+            task.add_done_callback(
                 lambda _f: QMetaObject.invokeMethod(
                     self,
                     "_finalize_quit",
