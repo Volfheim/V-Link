@@ -2,6 +2,12 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [2.4.7] - 2026-07-14
+### Device Discovery
+* Fixed devices disappearing from both peers after a manual refresh.
+* Improved discovery speed and reliability when one or both devices use a VPN on the same LAN.
+* Updated active network interface handling without restarting mDNS discovery.
+
 ## [2.4.6] - 2026-07-14
 ### Mobile Web Interface
 * Fixed the upload progress bar remaining visible after a completed transfer.

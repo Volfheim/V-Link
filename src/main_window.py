@@ -582,9 +582,6 @@ class MainWindow(QMainWindow):
 
     def _refresh_devices(self):
         if self.discovery and self.loop:
-            self.device_list.clear_devices()
-            self.selected_device = None
-            self.status_label.setText(t("● Обновление..."))
             async def do_refresh():
                 await self.discovery.refresh()
                 if self.relay:
@@ -822,7 +819,22 @@ class MainWindow(QMainWindow):
             return
 
         changed = await self.discovery.reconfigure_if_needed()
-        if changed:
+        vpn_detected = DeviceDiscovery.detect_vpn_environment()
+        multinet_detected = DeviceDiscovery.detect_multi_network_environment()
+        hotspot_detected = self._detect_hotspot_environment()
+        compatibility_mode = (
+            self.settings.nonstandard_network_mode
+            or hotspot_detected
+            or vpn_detected
+            or multinet_detected
+        )
+        mode_changed = await self.discovery.set_compatibility_mode(compatibility_mode)
+        self._vpn_detected = vpn_detected
+        self._multinet_detected = multinet_detected
+        self._hotspot_detected = hotspot_detected
+        self._effective_nonstandard_mode = compatibility_mode
+
+        if changed or mode_changed:
             QMetaObject.invokeMethod(self, "_on_network_changed", Qt.ConnectionType.QueuedConnection)
 
         QMetaObject.invokeMethod(self, "_on_ip_refresh", Qt.ConnectionType.QueuedConnection)

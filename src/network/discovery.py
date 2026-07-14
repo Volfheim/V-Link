@@ -13,6 +13,11 @@ import subprocess
 import time
 from typing import Callable, Dict, List, Optional
 
+try:
+    import ifaddr
+except Exception:  # pragma: no cover - zeroconf normally installs ifaddr
+    ifaddr = None
+
 from zeroconf import ServiceInfo, ServiceListener, Zeroconf
 from zeroconf.asyncio import AsyncServiceBrowser, AsyncZeroconf
 try:
@@ -26,12 +31,13 @@ from version import __version__
 
 SERVICE_TYPE = "_vlink._tcp.local."
 SERVICE_NAME = "V-Link"
-SERVICE_INFO_RETRIES = 3
-SERVICE_INFO_TIMEOUT = 3000  # ms
+SERVICE_INFO_RETRIES = 2
+SERVICE_INFO_TIMEOUT = 1500  # ms
 COMPAT_UDP_PORT = 39555
 COMPAT_ANNOUNCE_INTERVAL = 4.0
 COMPAT_PROBE_INTERVAL = 18.0
 COMPAT_DEVICE_TTL = 35.0
+MDNS_REMOVE_GRACE = 6.0
 
 
 class _CompatDatagramProtocol(asyncio.DatagramProtocol):
@@ -61,6 +67,18 @@ class DeviceDiscovery:
         "anyconnect",
         "windscribe",
     )
+    VIRTUAL_IFACE_MARKERS = (
+        "hyper-v",
+        "vethernet",
+        "wsl",
+        "virtual",
+        "vmware",
+        "virtualbox",
+        "docker",
+        "bluetooth",
+        "loopback",
+        "npcap",
+    )
 
     def __init__(self, port: int = 8765, compatibility_mode: bool = False):
         self.port = port
@@ -74,11 +92,14 @@ class DeviceDiscovery:
         self._local_ips: List[str] = []
         self._local_ip: Optional[str] = None
         self._scan_cursor: Dict[str, int] = {}
+        self._port_scan_cursor = 0
 
         self._compat_transport = None
         self._compat_protocol: Optional[_CompatDatagramProtocol] = None
         self._compat_announce_task: Optional[asyncio.Task] = None
         self._compat_probe_task: Optional[asyncio.Task] = None
+        self._compat_probe_lock = asyncio.Lock()
+        self._mdns_remove_tasks: Dict[str, asyncio.Task] = {}
 
         self.on_device_added: Optional[Callable] = None
         self.on_device_removed: Optional[Callable] = None
@@ -119,6 +140,71 @@ class DeviceDiscovery:
     def _is_vpn_iface_name(cls, iface_name: str) -> bool:
         probe = str(iface_name or "").lower()
         return any(marker in probe for marker in cls.VPN_IFACE_MARKERS)
+
+    @classmethod
+    def _is_virtual_iface_name(cls, iface_name: str) -> bool:
+        probe = str(iface_name or "").lower()
+        return any(marker in probe for marker in cls.VIRTUAL_IFACE_MARKERS)
+
+    @classmethod
+    def _interface_ipv4_records(cls) -> List[tuple[str, str, int]]:
+        records: List[tuple[str, str, int]] = []
+        seen: set[tuple[str, str]] = set()
+
+        if ifaddr is not None:
+            try:
+                for adapter in ifaddr.get_adapters():
+                    name = str(adapter.nice_name or adapter.name or "")
+                    for item in adapter.ips:
+                        ip = item.ip
+                        if not isinstance(ip, str) or not cls._is_valid_local_ip_static(ip):
+                            continue
+                        key = (name, ip)
+                        if key in seen:
+                            continue
+                        try:
+                            prefix = int(item.network_prefix)
+                        except (TypeError, ValueError):
+                            prefix = 24
+                        records.append((name, ip, min(32, max(0, prefix))))
+                        seen.add(key)
+            except Exception:
+                records = []
+                seen.clear()
+
+        if records:
+            return records
+
+        for name, ip in cls._windows_interface_ip_pairs():
+            if cls._is_valid_local_ip_static(ip) and (name, ip) not in seen:
+                records.append((name, ip, 24))
+                seen.add((name, ip))
+        return records
+
+    @classmethod
+    def _lan_interface_records(cls) -> List[tuple[str, str, int]]:
+        records = cls._interface_ipv4_records()
+        physical = [
+            record
+            for record in records
+            if not cls._is_vpn_iface_name(record[0])
+            and not cls._is_virtual_iface_name(record[0])
+        ]
+        selected = physical or records
+
+        def record_rank(record: tuple[str, str, int]) -> tuple[int, str]:
+            ip = record[1]
+            if ip.startswith("192.168.137."):
+                return (0, ip)
+            if ip.startswith("192.168."):
+                return (1, ip)
+            if ip.startswith("10."):
+                return (2, ip)
+            if ip.startswith("172."):
+                return (3, ip)
+            return (4, ip)
+
+        return sorted(selected, key=record_rank)
 
     @classmethod
     def _windows_interface_ip_pairs(cls, timeout_sec: float = 1.8) -> List[tuple[str, str]]:
@@ -162,7 +248,7 @@ class DeviceDiscovery:
 
     @classmethod
     def detect_vpn_environment(cls) -> bool:
-        for iface_name, ip in cls._windows_interface_ip_pairs():
+        for iface_name, ip, _prefix in cls._interface_ipv4_records():
             if cls._is_vpn_iface_name(iface_name) and cls._is_valid_local_ip_static(ip):
                 return True
         return False
@@ -174,7 +260,7 @@ class DeviceDiscovery:
         it's likely multi-homed (e.g. LAN + VPN/TUN). Enable compatibility mode.
         """
         subnets: set[str] = set()
-        for _iface_name, ip in cls._windows_interface_ip_pairs():
+        for _iface_name, ip, _prefix in cls._interface_ipv4_records():
             if not cls._is_valid_local_ip_static(ip):
                 continue
             try:
@@ -189,6 +275,13 @@ class DeviceDiscovery:
         return len(subnets) >= 2
 
     def _list_local_ipv4(self) -> List[str]:
+        interface_ips = []
+        for _name, ip, _prefix in self._lan_interface_records():
+            if ip not in interface_ips:
+                interface_ips.append(ip)
+        if interface_ips:
+            return interface_ips
+
         ips: set[str] = set()
 
         # Default route candidate (often current active interface).
@@ -240,6 +333,30 @@ class DeviceDiscovery:
 
         filtered.sort(key=ip_rank)
         return filtered
+
+    def _local_networks(self) -> List[ipaddress.IPv4Network]:
+        local_ips = set(self.get_local_ips())
+        networks: List[ipaddress.IPv4Network] = []
+        seen: set[str] = set()
+        for _name, ip, prefix in self._lan_interface_records():
+            if ip not in local_ips:
+                continue
+            try:
+                network = ipaddress.ip_network(f"{ip}/{prefix}", strict=False)
+            except ValueError:
+                continue
+            key = str(network)
+            if key not in seen:
+                networks.append(network)
+                seen.add(key)
+
+        if not networks:
+            for ip in local_ips:
+                try:
+                    networks.append(ipaddress.ip_network(f"{ip}/24", strict=False))
+                except ValueError:
+                    continue
+        return networks
 
     def get_local_ips(self) -> List[str]:
         if not self._local_ips:
@@ -302,6 +419,26 @@ class DeviceDiscovery:
         if key not in self.devices:
             return
         device = self.devices.pop(key)
+        replacements = [
+            candidate
+            for candidate in self.devices.values()
+            if str(candidate.get('name', '')).casefold() == str(device.get('name', '')).casefold()
+        ]
+        if replacements:
+            replacement = max(
+                replacements,
+                key=lambda candidate: (
+                    bool(candidate.get('reachable', False)),
+                    float(candidate.get('last_seen', 0.0)),
+                ),
+            )
+            if self.on_device_added:
+                self.on_device_added(
+                    replacement['name'],
+                    replacement['ip'],
+                    int(replacement['port']),
+                )
+            return
         if self.on_device_removed:
             self.on_device_removed(device['name'], device['ip'])
 
@@ -322,6 +459,8 @@ class DeviceDiscovery:
             properties={
                 'name': hostname,
                 'version': __version__,
+                'txtvers': '1',
+                'protovers': '1',
             },
         )
 
@@ -331,6 +470,17 @@ class DeviceDiscovery:
             if self.on_error:
                 self.on_error(f"Не удалось зарегистрировать сервис: {e}")
 
+    def _zeroconf_kwargs(self, local_ips: List[str]) -> dict:
+        kwargs = {}
+        explicit_ips = [ip for ip in local_ips if self._is_valid_local_ip(ip)]
+        if explicit_ips:
+            kwargs["interfaces"] = explicit_ips
+        elif InterfaceChoice is not None:
+            kwargs["interfaces"] = InterfaceChoice.All
+        if IPVersion is not None:
+            kwargs["ip_version"] = IPVersion.V4Only
+        return kwargs
+
     async def start(self):
         if self._running:
             return
@@ -339,12 +489,7 @@ class DeviceDiscovery:
             self._local_ips = self._list_local_ipv4()
             self._local_ip = self._local_ips[0] if self._local_ips else "127.0.0.1"
 
-            zc_kwargs = {}
-            if InterfaceChoice is not None:
-                zc_kwargs["interfaces"] = InterfaceChoice.All
-            if IPVersion is not None:
-                zc_kwargs["ip_version"] = IPVersion.V4Only
-            self.zeroconf = AsyncZeroconf(**zc_kwargs)
+            self.zeroconf = AsyncZeroconf(**self._zeroconf_kwargs(self._local_ips))
             await self._register_service()
             self._running = True
             await self.resume_browsing()
@@ -367,14 +512,59 @@ class DeviceDiscovery:
         if set(new_ips) == set(self._local_ips):
             return False
 
-        try:
-            await self.zeroconf.async_unregister_service(self.service_info)
-        except Exception:
-            pass
-
+        browsing = self.browser is not None
         self._local_ips = new_ips
         self._local_ip = new_ips[0]
-        await self._register_service()
+
+        update_interfaces = getattr(self.zeroconf, "async_update_interfaces", None)
+        if callable(update_interfaces):
+            kwargs = self._zeroconf_kwargs(new_ips)
+            await update_interfaces(
+                interfaces=kwargs.get("interfaces"),
+                ip_version=kwargs.get("ip_version"),
+            )
+            self.service_info.addresses = [socket.inet_aton(ip) for ip in new_ips]
+            await self.zeroconf.async_update_service(self.service_info)
+        else:  # Compatibility with zeroconf versions before async interface updates.
+            if self.browser:
+                await self.browser.async_cancel()
+                self.browser = None
+            try:
+                await self.zeroconf.async_unregister_service(self.service_info)
+            except Exception:
+                pass
+            await self.zeroconf.async_close()
+            self.zeroconf = AsyncZeroconf(**self._zeroconf_kwargs(new_ips))
+            self.service_info = None
+            await self._register_service()
+            if browsing:
+                await self.resume_browsing()
+
+        if self.compatibility_mode:
+            await self._send_compat_packet("announce")
+        return True
+
+    async def set_compatibility_mode(self, enabled: bool) -> bool:
+        enabled = bool(enabled)
+        if enabled == self.compatibility_mode:
+            return False
+
+        self.compatibility_mode = enabled
+        if not self._running:
+            return True
+
+        if enabled:
+            await self._start_compatibility()
+            await self._send_compat_packet("probe")
+        else:
+            await self._stop_compatibility()
+            stale_keys = [
+                key
+                for key, device in self.devices.items()
+                if str(device.get("source", "")).startswith("compat")
+            ]
+            for key in stale_keys:
+                self._remove_device_by_key(key)
         return True
 
     async def resume_browsing(self):
@@ -404,6 +594,12 @@ class DeviceDiscovery:
         await self.browser.async_cancel()
         self.browser = None
         await self._stop_compatibility()
+
+    async def _refresh_mdns_browser(self):
+        if self.browser:
+            await self.browser.async_cancel()
+            self.browser = None
+        await self.resume_browsing()
 
     def _check_output_hidden(self, command: List[str], timeout_sec: float = 1.2) -> str:
         startupinfo = None
@@ -443,12 +639,8 @@ class DeviceDiscovery:
 
     def _broadcast_targets(self) -> List[tuple[str, int]]:
         targets: set[tuple[str, int]] = {("255.255.255.255", COMPAT_UDP_PORT)}
-        for ip in self.get_local_ips():
-            try:
-                net = ipaddress.ip_network(f"{ip}/24", strict=False)
-                targets.add((str(net.broadcast_address), COMPAT_UDP_PORT))
-            except ValueError:
-                continue
+        for network in self._local_networks():
+            targets.add((str(network.broadcast_address), COMPAT_UDP_PORT))
         return list(targets)
 
     async def _send_compat_packet(self, packet_type: str, target: Optional[tuple[str, int]] = None):
@@ -529,30 +721,25 @@ class DeviceDiscovery:
         local_set = set(self.get_local_ips())
         candidates: set[str] = set()
         hotspot_env = self._is_hotspot_environment()
-        for local_ip in local_set:
-            try:
-                addr = ipaddress.ip_address(local_ip)
-                if not addr.is_private:
-                    continue
-                net = ipaddress.ip_network(f"{local_ip}/24", strict=False)
-                hosts = [str(h) for h in net.hosts()]
-                if not hosts:
-                    continue
-                key = str(net)
-                cursor = int(self._scan_cursor.get(key, 0)) % len(hosts)
-                # On hotspot / isolated Wi-Fi, scan a larger sliding window for faster peer pickup.
-                window = min(120 if hotspot_env else 48, len(hosts))
-                for i in range(window):
-                    candidate = hosts[(cursor + i) % len(hosts)]
-                    if candidate not in local_set:
-                        candidates.add(candidate)
-                self._scan_cursor[key] = (cursor + window) % len(hosts)
-            except ValueError:
+        for network in self._local_networks():
+            if network.num_addresses <= 2 or network.num_addresses > 1024:
                 continue
+            first_host = int(network.network_address) + 1
+            host_count = int(network.num_addresses) - 2
+            key = str(network)
+            cursor = int(self._scan_cursor.get(key, 0)) % host_count
+            # On hotspot / isolated Wi-Fi, scan a larger sliding window for faster peer pickup.
+            window = min(120 if hotspot_env else 48, host_count)
+            for i in range(window):
+                candidate = str(ipaddress.ip_address(first_host + ((cursor + i) % host_count)))
+                if candidate not in local_set:
+                    candidates.add(candidate)
+            self._scan_cursor[key] = (cursor + window) % host_count
         return candidates
 
     def _collect_probe_candidates(self) -> List[str]:
         local_set = set(self.get_local_ips())
+        local_networks = self._local_networks()
         candidates = self._parse_arp_candidates()
         candidates.update(self._scan_window_candidates())
 
@@ -561,19 +748,30 @@ class DeviceDiscovery:
             if ip and ip not in local_set:
                 candidates.add(ip)
 
-        result = [ip for ip in candidates if ip and ip not in local_set and self._is_valid_local_ip(ip)]
+        result = []
+        for ip in candidates:
+            if not ip or ip in local_set or not self._is_valid_local_ip(ip):
+                continue
+            try:
+                address = ipaddress.ip_address(ip)
+            except ValueError:
+                continue
+            if any(address in network for network in local_networks):
+                result.append(ip)
         result.sort()
         return result
 
     def _port_candidates(self) -> List[int]:
         ports = [self.port]
-        for p in range(8765, 8775):
-            if p not in ports:
-                ports.append(p)
+        alternates = [port for port in range(8765, 8775) if port != self.port]
+        if alternates:
+            index = self._port_scan_cursor % len(alternates)
+            ports.append(alternates[index])
+            self._port_scan_cursor = (index + 1) % len(alternates)
         return ports
 
     async def _probe_ip(self, ip: str, port: int) -> bool:
-        info = await self._http_get_json(ip, port, "/info", timeout=1.2)
+        info = await self._http_get_json(ip, port, "/info", timeout=0.65)
         if not info:
             return False
 
@@ -582,42 +780,44 @@ class DeviceDiscovery:
         if self._is_self_candidate(name, remote_port, [ip], sender_ip=ip):
             return False
 
-        selected_ip, reachable = await self._pick_preferred_ip([ip], remote_port)
-        if not selected_ip:
-            return False
-
         self._upsert_device(
-            key=f"compat-scan::{name}:{selected_ip}:{remote_port}",
+            key=f"compat-scan::{name}:{ip}:{remote_port}",
             name=name,
-            ip=selected_ip,
-            ips=[selected_ip],
+            ip=ip,
+            ips=[ip],
             port=remote_port,
             source="compat-scan",
-            reachable=reachable,
+            reachable=True,
         )
         return True
+
+    async def _run_compat_probe(self):
+        if self._compat_probe_lock.locked():
+            return
+        async with self._compat_probe_lock:
+            # Refresh local IPs each cycle so late-acquired addresses
+            # (e.g. phone hotspot) are recognised as self.
+            self._local_ips = self._list_local_ipv4()
+            self._local_ip = self._local_ips[0] if self._local_ips else "127.0.0.1"
+
+            candidates = self._collect_probe_candidates()
+            ports = self._port_candidates()
+            if candidates and ports:
+                sem = asyncio.Semaphore(28)
+
+                async def probe_candidate(candidate_ip: str):
+                    async with sem:
+                        for candidate_port in ports:
+                            if await self._probe_ip(candidate_ip, candidate_port):
+                                return
+
+                await asyncio.gather(*(probe_candidate(ip) for ip in candidates))
+            self._cleanup_stale_compat_devices()
 
     async def _compat_probe_loop(self):
         while self._running and self.compatibility_mode:
             try:
-                # Refresh local IPs each cycle so late-acquired addresses
-                # (e.g. phone hotspot) are recognised as self.
-                self._local_ips = self._list_local_ipv4()
-                self._local_ip = self._local_ips[0] if self._local_ips else "127.0.0.1"
-
-                candidates = self._collect_probe_candidates()
-                ports = self._port_candidates()
-                if candidates and ports:
-                    sem = asyncio.Semaphore(28)
-
-                    async def probe_candidate(candidate_ip: str):
-                        async with sem:
-                            for candidate_port in ports:
-                                if await self._probe_ip(candidate_ip, candidate_port):
-                                    return
-
-                    await asyncio.gather(*(probe_candidate(ip) for ip in candidates))
-                self._cleanup_stale_compat_devices()
+                await self._run_compat_probe()
             except Exception:
                 pass
             await asyncio.sleep(8.0 if self._is_hotspot_environment() else COMPAT_PROBE_INTERVAL)
@@ -714,7 +914,7 @@ class DeviceDiscovery:
             reachable=reachable,
         )
 
-        if packet_type == "announce" and sender_ip:
+        if packet_type in ("announce", "probe") and sender_ip:
             sender_port = int(addr[1]) if addr and len(addr) > 1 else COMPAT_UDP_PORT
             await self._send_compat_packet("response", (sender_ip, sender_port))
 
@@ -776,13 +976,12 @@ class DeviceDiscovery:
             return "", False
 
         async def can_connect(ip: str) -> bool:
-            for _ in range(2):
-                try:
-                    pong = await self._http_get_json(ip, port, "/ping", timeout=1.0)
-                    if isinstance(pong, dict) and str(pong.get("status", "")).lower() == "ok":
-                        return True
-                except Exception:
-                    continue
+            try:
+                pong = await self._http_get_json(ip, port, "/ping", timeout=0.65)
+                if isinstance(pong, dict) and str(pong.get("status", "")).lower() == "ok":
+                    return True
+            except Exception:
+                return False
             return False
 
         ordered = self._rank_candidate_ips(ips)
@@ -800,6 +999,10 @@ class DeviceDiscovery:
 
     async def _on_service_found(self, zc: Zeroconf, type_: str, name: str):
         from zeroconf.asyncio import AsyncServiceInfo
+
+        pending_removal = self._mdns_remove_tasks.pop(name, None)
+        if pending_removal and not pending_removal.done():
+            pending_removal.cancel()
 
         info = AsyncServiceInfo(type_, name)
 
@@ -842,17 +1045,40 @@ class DeviceDiscovery:
                 elif self.on_error:
                     self.on_error(f"Не удалось получить info для {name}: {e}")
 
+    async def _remove_mdns_after_grace(self, name: str):
+        try:
+            await asyncio.sleep(MDNS_REMOVE_GRACE)
+            self._remove_device_by_key(f"mdns::{name}")
+        except asyncio.CancelledError:
+            return
+        finally:
+            current = self._mdns_remove_tasks.get(name)
+            if current is asyncio.current_task():
+                self._mdns_remove_tasks.pop(name, None)
+
     def _on_service_removed(self, name: str):
-        self._remove_device_by_key(f"mdns::{name}")
+        previous = self._mdns_remove_tasks.pop(name, None)
+        if previous and not previous.done():
+            previous.cancel()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._remove_device_by_key(f"mdns::{name}")
+        else:
+            self._mdns_remove_tasks[name] = loop.create_task(
+                self._remove_mdns_after_grace(name)
+            )
 
     async def refresh(self):
-        await self.stop()
-        self._local_ips = []
-        self._local_ip = None
-        self._scan_cursor.clear()
-        self.devices.clear()
-        await asyncio.sleep(0.4)
-        await self.start()
+        if not self._running:
+            await self.start()
+            return
+
+        await self.reconfigure_if_needed()
+        await self._refresh_mdns_browser()
+        if self.compatibility_mode:
+            await self._send_compat_packet("probe")
+            await self._run_compat_probe()
 
     def get_devices(self) -> Dict[str, Dict]:
         return dict(self.devices)
@@ -860,6 +1086,14 @@ class DeviceDiscovery:
     async def stop(self):
         self._running = False
         try:
+            removal_tasks = list(self._mdns_remove_tasks.values())
+            self._mdns_remove_tasks.clear()
+            for task in removal_tasks:
+                if not task.done():
+                    task.cancel()
+            if removal_tasks:
+                await asyncio.gather(*removal_tasks, return_exceptions=True)
+
             await self._stop_compatibility()
 
             if self.browser:
