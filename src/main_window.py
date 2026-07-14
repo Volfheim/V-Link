@@ -1300,22 +1300,17 @@ class MainWindow(QMainWindow):
                             if candidate not in candidates:
                                 candidates.append(candidate)
 
-            ranked: list[tuple[str, int]] = []
-            ping_timeout = 3.5 if self._effective_nonstandard_mode else 2.0
-            ping_retries = 2 if self._effective_nonstandard_mode else 1
-            for candidate_ip, candidate_port in candidates:
-                ok = await self.client.ping(candidate_ip, candidate_port, timeout=ping_timeout, retries=ping_retries)
-                if ok:
-                    ranked.insert(0, (candidate_ip, candidate_port))
-                else:
-                    ranked.append((candidate_ip, candidate_port))
+            route_timeout = 1.0 if self._effective_nonstandard_mode else 0.65
+            preferred = await self.client.pick_reachable_endpoint(
+                candidates,
+                timeout=route_timeout,
+            )
+            ranked = [preferred] + [candidate for candidate in candidates if candidate != preferred]
 
             last_error = None
             for candidate_ip, candidate_port in ranked:
                 try:
-                    self.status_label.setText(
-                        t("● Проверка маршрута: {ip}:{port}", ip=candidate_ip, port=candidate_port)
-                    )
+                    self.status_label.setText(t("● Отправка: {name}", name=name))
                     await self.client.send_files(valid_files, candidate_ip, candidate_port, target_name=name)
                     if (candidate_ip, candidate_port) != (ip, port):
                         self.selected_device = (name, candidate_ip, candidate_port)

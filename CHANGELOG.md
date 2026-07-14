@@ -2,6 +2,11 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [2.4.8] - 2026-07-14
+### File Transfers
+* Removed long transfer startup delays caused by sequential checks of multiple device addresses.
+* Redesigned the transfer list with active transfers first, clearer progress details, and manageable history.
+
 ## [2.4.7] - 2026-07-14
 ### Device Discovery
 * Fixed devices disappearing from both peers after a manual refresh.
