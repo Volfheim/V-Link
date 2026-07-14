@@ -2,6 +2,11 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [2.4.6] - 2026-07-14
+### Mobile Web Interface
+* Fixed the upload progress bar remaining visible after a completed transfer.
+* Fixed the white background area that could appear when scrolling past the bottom of the page on mobile browsers.
+
 ## [2.4.5] - 2026-07-14
 ### Mobile File & Folder Transfers
 * Fixed single files uploaded from a phone being placed inside redundant wrapper folders.
