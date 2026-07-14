@@ -28,19 +28,23 @@
         }
 
         html {
-            background-color: #0B1020;
-            background: linear-gradient(135deg, #170F30 0%, #0B1020 100%);
-            background-attachment: fixed;
             min-height: 100%;
+            background-color: #0B1020;
+            overscroll-behavior-y: none;
         }
 
         body {
             margin: 0;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: transparent;
+            background-color: #0B1020;
+            background-image: linear-gradient(135deg, #170F30 0%, #0B1020 100%);
+            background-repeat: no-repeat;
+            background-size: cover;
             color: var(--text);
-            padding-bottom: 30px;
+            padding-bottom: calc(30px + env(safe-area-inset-bottom, 0px));
             min-height: 100vh;
+            min-height: 100dvh;
+            overscroll-behavior-y: none;
         }
 
         /* --- Header --- */
@@ -442,8 +446,13 @@
             width: 100%;
             height: 4px;
             background: transparent;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
             z-index: 200;
         }
+
+        .progress-bar-wrap.active { opacity: 1; }
 
         .progress-bar {
             height: 100%;
@@ -640,7 +649,7 @@
     </div>
 
     <!-- Progress Bar -->
-    <div class="progress-bar-wrap">
+    <div id="progressBarWrap" class="progress-bar-wrap">
         <div id="progressBar" class="progress-bar"></div>
     </div>
 
@@ -677,6 +686,7 @@
             chooseFolderBtn: document.getElementById('chooseFolderBtn'),
             fileList: document.getElementById('fileList'),
             refreshBtn: document.getElementById('refreshBtn'),
+            progressBarWrap: document.getElementById('progressBarWrap'),
             progressBar: document.getElementById('progressBar'),
             uploadDetail: document.getElementById('uploadDetail'),
             uploadDetailTitle: document.getElementById('uploadDetailTitle'),
@@ -708,6 +718,39 @@
 
         // State
         let currentPath = '';
+        let uploadProgressResetTimer = null;
+
+        function resetUploadProgress() {
+            if (uploadProgressResetTimer !== null) {
+                clearTimeout(uploadProgressResetTimer);
+                uploadProgressResetTimer = null;
+            }
+            dom.progressBarWrap.classList.remove('active');
+            dom.progressBar.style.width = '0%';
+            dom.uploadDetail.classList.add('hidden');
+            dom.uploadDetailMeta.textContent = '';
+            dom.uploadDetailBytes.textContent = '';
+        }
+
+        function startUploadProgress() {
+            resetUploadProgress();
+            dom.progressBarWrap.classList.add('active');
+            dom.uploadDetail.classList.remove('hidden');
+        }
+
+        function scheduleUploadProgressReset() {
+            if (uploadProgressResetTimer !== null) {
+                clearTimeout(uploadProgressResetTimer);
+            }
+            uploadProgressResetTimer = setTimeout(() => {
+                uploadProgressResetTimer = null;
+                dom.progressBarWrap.classList.remove('active');
+                dom.progressBar.style.width = '0%';
+                dom.uploadDetail.classList.add('hidden');
+                dom.uploadDetailMeta.textContent = '';
+                dom.uploadDetailBytes.textContent = '';
+            }, 800);
+        }
         let currentItems = [];
         let currentSort = 'date';
 
@@ -1091,7 +1134,7 @@
                     : file.name;
             };
 
-            dom.uploadDetail.classList.remove('hidden');
+            startUploadProgress();
             dom.uploadDetailTitle.textContent = tr('uploading', 'Uploading...');
             
             // Генерация сессионного transfer_id
@@ -1129,6 +1172,7 @@
                     dom.fileInput.value = '';
                     if (dom.dirInput) dom.dirInput.value = '';
                     browseTo(currentPath);
+                    scheduleUploadProgressReset();
                     return;
                 }
 
@@ -1201,15 +1245,13 @@
                         uploadNextFile();
                     } else {
                         showToast(tr('uploadError', 'Upload error') + `: ${file.name}`, 'error');
-                        dom.progressBar.style.width = '0%';
-                        dom.uploadDetail.classList.add('hidden');
+                        resetUploadProgress();
                     }
                 };
 
                 xhr.onerror = () => {
                     showToast(tr('networkError', 'Network error'), 'error');
-                    dom.progressBar.style.width = '0%';
-                    dom.uploadDetail.classList.add('hidden');
+                    resetUploadProgress();
                 };
 
                 xhr.send(file);
