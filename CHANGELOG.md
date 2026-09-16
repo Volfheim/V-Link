@@ -2,6 +2,12 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [2.4.9] - 2026-09-16
+### Secure transport
+* Separated authentication and file-encryption key derivation in protocol v2.
+* Added temporary legacy v1 fallback for staged client upgrades.
+* Kept clipboard contents plaintext and documented relay metadata visibility.
+
 ## [2.4.8] - 2026-07-14
 ### File Transfers
 * Removed long transfer startup delays caused by sequential checks of multiple device addresses.
