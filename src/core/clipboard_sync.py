@@ -18,6 +18,7 @@ from PyQt6.QtCore import QBuffer, QIODevice, QObject, QTimer
 from PyQt6.QtGui import QGuiApplication, QImage
 
 from crash_reporter import record_exception
+from security.derivation import PROTOCOL_VERSION, auth_token
 
 
 class ClipboardSyncManager(QObject):
@@ -197,8 +198,8 @@ class ClipboardSyncManager(QObject):
     def _auth_headers(self) -> dict:
         headers = {"Content-Type": "application/json"}
         if self._auth_secret:
-            token = hashlib.sha256(self._auth_secret.encode("utf-8")).hexdigest()
-            headers["X-Auth-Token"] = token
+            headers["X-Auth-Version"] = PROTOCOL_VERSION
+            headers["X-Auth-Token"] = auth_token(self._auth_secret)
         return headers
 
     async def _ensure_session(self):
@@ -222,8 +223,11 @@ class ClipboardSyncManager(QObject):
         for ip, port in peers:
             try:
                 url = f"http://{ip}:{int(port)}/clipboard"
-                async with self._session.post(url, data=body, headers=headers):
-                    pass
+                async with self._session.post(url, data=body, headers=headers) as response:
+                    if response.status == 401 and self._auth_secret:
+                        legacy_headers = {"Content-Type": "application/json", "X-Auth-Token": auth_token(self._auth_secret, "1")}
+                        async with self._session.post(url, data=body, headers=legacy_headers):
+                            pass
             except Exception:
                 continue
 
