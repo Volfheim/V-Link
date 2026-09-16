@@ -92,6 +92,7 @@ def _message_view(message: Dict) -> Dict:
         "from_name": message["from_name"],
         "secure_mode": message["secure_mode"],
         "encrypted": message["encrypted"],
+        "protocol_version": message.get("protocol_version", "1"),
         "created_at": message["created_at"],
     }
 
@@ -158,6 +159,7 @@ async def presence(request: web.Request) -> web.Response:
     client_id = str(body.get("client_id", "")).strip()
     name = _safe_name(str(body.get("name", "")).strip(), client_id or "unknown")
     secure_mode = bool(body.get("secure_mode", False))
+    protocol_version = str(body.get("protocol_version", "1")).strip() or "1"
     if not client_id:
         return web.json_response({"status": "error", "message": "client_id is required"}, status=400)
 
@@ -169,6 +171,7 @@ async def presence(request: web.Request) -> web.Response:
             "id": client_id,
             "name": name,
             "secure_mode": secure_mode,
+            "protocol_version": protocol_version,
             "last_seen": now,
         }
 
@@ -184,6 +187,7 @@ async def presence(request: web.Request) -> web.Response:
                     "id": peer["id"],
                     "name": peer["name"],
                     "secure_mode": bool(peer.get("secure_mode", False)),
+                    "protocol_version": str(peer.get("protocol_version", "1")),
                     "last_seen": float(peer.get("last_seen", now)),
                 }
             )
@@ -203,6 +207,7 @@ async def upload(request: web.Request) -> web.Response:
     from_name = _decode_b64(request.headers.get("X-Sender-Name-B64", ""), from_id or "unknown")
     secure_mode = request.headers.get("X-Secure-Mode", "0").strip() == "1"
     encrypted = request.headers.get("X-Encrypted", "none").strip().lower()
+    protocol_version = request.headers.get("X-Protocol-Version", "1").strip() or "1"
 
     if not from_id or not target_id:
         return web.json_response({"status": "error", "message": "X-Client-ID and X-Target-ID are required"}, status=400)
@@ -257,6 +262,7 @@ async def upload(request: web.Request) -> web.Response:
             "stored_size": written,
             "secure_mode": secure_mode,
             "encrypted": encrypted,
+            "protocol_version": protocol_version,
             "created_at": now,
             "path": str(file_path),
             "status": "pending",
@@ -320,6 +326,7 @@ async def download(request: web.Request) -> web.Response:
         response.headers["X-Filesize"] = str(msg.get("size", 0))
         response.headers["X-Secure-Mode"] = "1" if bool(msg.get("secure_mode", False)) else "0"
         response.headers["X-Encrypted"] = str(msg.get("encrypted", "none"))
+        response.headers["X-Protocol-Version"] = str(msg.get("protocol_version", "1"))
         return response
 
 

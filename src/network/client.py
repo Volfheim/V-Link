@@ -15,6 +15,7 @@ import aiofiles
 import aiohttp
 import lz4.frame
 from cryptography.fernet import Fernet
+from security.derivation import PROTOCOL_VERSION, auth_token, fernet_key
 
 
 CHUNK_SIZE = 1024 * 1024  # 1 MB
@@ -60,9 +61,7 @@ class TransferClient:
         self.compatibility_mode = compatibility_mode
         self._cipher: Optional[Fernet] = None
         if self.enable_encryption and self.auth_token:
-            key = hashlib.sha256(self.auth_token.encode("utf-8")).digest()
-            import base64
-            self._cipher = Fernet(base64.urlsafe_b64encode(key))
+            self._cipher = Fernet(fernet_key(self.auth_token))
 
         self._profile: Dict[str, float | int | bool] = {
             'calibrated': False,
@@ -200,6 +199,7 @@ class TransferClient:
 
         total_size = os.path.getsize(filepath)
         use_plan = plan or TransferPlan(self.base_chunk_size_bytes, 1, False)
+        protocol_version = PROTOCOL_VERSION
 
         if self.on_transfer_start:
             self.on_transfer_start(transfer_id, display_name, total_size, True)
@@ -218,11 +218,15 @@ class TransferClient:
                     use_plan,
                     target_name=target_name,
                     target_rel_path=target_rel_path,
+                    protocol_version=protocol_version,
                 )
                 self._learn_from_transfer(total_size, elapsed, use_plan)
                 return result_id
             except aiohttp.ClientError as e:
                 last_error = e
+                if getattr(e, "status", None) == 401 and self.auth_token and protocol_version == PROTOCOL_VERSION:
+                    protocol_version = "1"
+                    continue
                 if attempt < MAX_RETRIES - 1:
                     await self.stop()
                     await self._ensure_session()
@@ -251,9 +255,11 @@ class TransferClient:
         plan: TransferPlan,
         target_name: str = "",
         target_rel_path: str = "",
+        protocol_version: str = PROTOCOL_VERSION,
     ) -> tuple[str, float]:
         file_hash = await self._hash_file(filepath, plan.chunk_size) if self.verify_checksum else None
         start_time = time.time()
+        transfer_cipher = Fernet(fernet_key(self.auth_token, protocol_version)) if self.enable_encryption and self.auth_token else None
 
         async def file_sender():
             sent = 0
@@ -274,8 +280,8 @@ class TransferClient:
 
                     payload = compressor.compress(chunk) if compressor else chunk
                     if payload:
-                        if self._cipher:
-                            token = self._cipher.encrypt(payload)
+                        if transfer_cipher:
+                            token = transfer_cipher.encrypt(payload)
                             frame = len(token).to_bytes(4, "big") + token
                             yield frame
                         else:
@@ -293,8 +299,8 @@ class TransferClient:
             if compressor:
                 tail = compressor.flush()
                 if tail:
-                    if self._cipher:
-                        token = self._cipher.encrypt(tail)
+                    if transfer_cipher:
+                        token = transfer_cipher.encrypt(tail)
                         frame = len(token).to_bytes(4, "big") + token
                         yield frame
                     else:
@@ -314,14 +320,14 @@ class TransferClient:
             
         if plan.use_lz4:
             headers['X-Content-Encoding'] = 'lz4-stream'
-        if self._cipher:
+        if transfer_cipher:
             headers['X-Encrypted'] = 'fernet-frame'
         if file_hash:
             headers['X-File-SHA256'] = file_hash
         if self.auth_token:
             # Stable shared token for secure mode without hostname coupling.
-            derived = hashlib.sha256(self.auth_token.encode("utf-8")).hexdigest()
-            headers['X-Auth-Token'] = derived
+            headers['X-Auth-Version'] = protocol_version
+            headers['X-Auth-Token'] = auth_token(self.auth_token, protocol_version)
 
         url = f"http://{host}:{port}/upload"
         request_timeout = aiohttp.ClientTimeout(

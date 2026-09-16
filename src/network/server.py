@@ -23,6 +23,7 @@ import aiofiles
 import lz4.frame
 from aiohttp import web
 from cryptography.fernet import Fernet
+from security.derivation import PROTOCOL_VERSION, auth_matches, fernet_key
 
 from core.i18n import i18n, t
 from network.zip_streamer import stream_folder_as_zip, estimate_folder_size
@@ -84,9 +85,10 @@ class TransferServer:
         self.verify_checksum = verify_checksum
         self.enable_encryption = enable_encryption
         self._cipher: Optional[Fernet] = None
+        self._legacy_cipher: Optional[Fernet] = None
         if self.enable_encryption and self.auth_token:
-            key = hashlib.sha256(self.auth_token.encode("utf-8")).digest()
-            self._cipher = Fernet(base64.urlsafe_b64encode(key))
+            self._cipher = Fernet(fernet_key(self.auth_token))
+            self._legacy_cipher = Fernet(fernet_key(self.auth_token, "1"))
         self.app = web.Application(client_max_size=0)  # No upload size limit
         self.runner: Optional[web.AppRunner] = None
         self.site: Optional[web.TCPSite] = None
@@ -1084,8 +1086,8 @@ class TransferServer:
         try:
             if self.auth_token:
                 provided_token = request.headers.get('X-Auth-Token', '')
-                expected_token = hashlib.sha256(self.auth_token.encode("utf-8")).hexdigest()
-                if provided_token != expected_token:
+                auth_version = request.headers.get('X-Auth-Version')
+                if auth_matches(self.auth_token, provided_token, auth_version) is None:
                     return web.json_response({'status': 'error', 'message': 'Unauthorized'}, status=401)
 
             payload = await request.json()
@@ -1123,6 +1125,7 @@ class TransferServer:
         return web.json_response({
             'name': socket.gethostname(),
             'version': __version__,
+            'secure_protocol': PROTOCOL_VERSION,
             'ready': True,
             'port': self.port,
         })
@@ -1130,13 +1133,17 @@ class TransferServer:
     async def _handle_upload(self, request: web.Request) -> web.Response:
         transfer_id = request.headers.get('X-Transfer-ID', str(time.time()))
         filepath = None
+        request_cipher = self._cipher
 
         try:
             if self.auth_token:
                 provided_token = request.headers.get('X-Auth-Token', '')
-                expected_token = hashlib.sha256(self.auth_token.encode("utf-8")).hexdigest()
-                if provided_token != expected_token:
+                auth_version = request.headers.get('X-Auth-Version')
+                accepted_version = auth_matches(self.auth_token, provided_token, auth_version)
+                if accepted_version is None:
                     return web.json_response({'status': 'error', 'message': 'Unauthorized'}, status=401)
+                if accepted_version == '1':
+                    request_cipher = self._legacy_cipher
 
             import urllib.parse
             filename_raw = request.headers.get('X-Filename', 'unknown')
@@ -1192,7 +1199,7 @@ class TransferServer:
 
             async with aiofiles.open(filepath, 'wb') as f:
                 if encrypted_mode:
-                    if not self._cipher:
+                    if not request_cipher:
                         raise ValueError("Encrypted mode is not enabled on receiver")
                     buffer = b""
                     async for raw_chunk in request.content.iter_chunked(self.chunk_size_bytes):
@@ -1205,7 +1212,7 @@ class TransferServer:
                                 break
                             token = buffer[4:4 + frame_len]
                             buffer = buffer[4 + frame_len:]
-                            decoded = self._cipher.decrypt(token)
+                            decoded = request_cipher.decrypt(token)
                             chunk = decoded
                             if decompressor:
                                 chunk = decompressor.decompress(decoded)

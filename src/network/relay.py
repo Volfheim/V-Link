@@ -16,6 +16,7 @@ from urllib.parse import urljoin
 import aiofiles
 import aiohttp
 from cryptography.fernet import Fernet
+from security.derivation import PROTOCOL_VERSION, fernet_key
 
 
 UPLOAD_CHUNK_SIZE = 1024 * 1024
@@ -44,9 +45,10 @@ class RelayClient:
         self.auth_token = (auth_token or "").strip()
 
         self._cipher: Optional[Fernet] = None
+        self._legacy_cipher: Optional[Fernet] = None
         if self.secure_mode and self.auth_token:
-            key = hashlib.sha256(self.auth_token.encode("utf-8")).digest()
-            self._cipher = Fernet(base64.urlsafe_b64encode(key))
+            self._cipher = Fernet(fernet_key(self.auth_token))
+            self._legacy_cipher = Fernet(fernet_key(self.auth_token, "1"))
 
         self._session_lock = asyncio.Lock()
         self.session: Optional[aiohttp.ClientSession] = None
@@ -207,6 +209,7 @@ class RelayClient:
             "client_id": self.client_id,
             "name": self.display_name,
             "secure_mode": self.secure_mode,
+            "protocol_version": PROTOCOL_VERSION if self._cipher else "1",
         }
         timeout = aiohttp.ClientTimeout(total=10, connect=6, sock_read=8)
         async with self.session.post(self._endpoint("/api/v1/presence"), json=payload, timeout=timeout) as resp:
@@ -231,6 +234,7 @@ class RelayClient:
                 "id": peer_id,
                 "name": peer_name,
                 "secure_mode": bool(item.get("secure_mode", False)),
+                "protocol_version": str(item.get("protocol_version", "1")),
                 "last_seen": float(item.get("last_seen", 0.0) or 0.0),
             }
 
@@ -290,6 +294,11 @@ class RelayClient:
                 self.on_transfer_error(transfer_id, error)
             raise ValueError(error)
 
+        protocol_version = str(peer.get("protocol_version", "1") if peer else PROTOCOL_VERSION)
+        if protocol_version not in ("1", PROTOCOL_VERSION):
+            protocol_version = PROTOCOL_VERSION
+        transfer_cipher = self._legacy_cipher if protocol_version == "1" else self._cipher
+
         total_size = os.path.getsize(filepath)
         if self.on_transfer_start:
             self.on_transfer_start(transfer_id, filename, total_size, True)
@@ -306,8 +315,8 @@ class RelayClient:
                     if not chunk:
                         break
 
-                    if self._cipher:
-                        token = self._cipher.encrypt(chunk)
+                    if transfer_cipher:
+                        token = transfer_cipher.encrypt(chunk)
                         frame = len(token).to_bytes(4, "big") + token
                         payload = frame
                     else:
@@ -331,7 +340,8 @@ class RelayClient:
             "X-Filesize": str(total_size),
             "X-Transfer-ID": transfer_id,
             "X-Secure-Mode": "1" if self.secure_mode else "0",
-            "X-Encrypted": "fernet-frame" if self._cipher else "none",
+            "X-Encrypted": "fernet-frame" if transfer_cipher else "none",
+            "X-Protocol-Version": protocol_version if transfer_cipher else "1",
         }
         if target_name:
             headers["X-Target-Name-B64"] = base64.urlsafe_b64encode(target_name.encode("utf-8")).decode("ascii")
@@ -367,6 +377,8 @@ class RelayClient:
         expected_size = int(message.get("size", 0) or 0)
         secure_required = bool(message.get("secure_mode", False))
         encrypted = str(message.get("encrypted", "")).strip().lower() == "fernet-frame"
+        protocol_version = str(message.get("protocol_version", "1")).strip()
+        message_cipher = self._legacy_cipher if protocol_version == "1" else self._cipher
 
         if secure_required != self.secure_mode:
             await self._ack(msg_id, "error", "SECURE_MODE_MISMATCH")
@@ -374,7 +386,13 @@ class RelayClient:
                 self.on_transfer_error(transfer_id, "Security mode mismatch with relay peer")
             return
 
-        if encrypted and not self._cipher:
+        if encrypted and protocol_version not in ("1", PROTOCOL_VERSION):
+            await self._ack(msg_id, "error", "UNSUPPORTED_PROTOCOL")
+            if self.on_transfer_error:
+                self.on_transfer_error(transfer_id, "Unsupported secure protocol version")
+            return
+
+        if encrypted and not message_cipher:
             await self._ack(msg_id, "error", "RECEIVER_NO_CIPHER")
             if self.on_transfer_error:
                 self.on_transfer_error(transfer_id, "Encrypted relay payload cannot be decrypted")
@@ -415,7 +433,7 @@ class RelayClient:
                                 break
                             token = buffer[4:4 + frame_len]
                             buffer = buffer[4 + frame_len:]
-                            decoded = self._cipher.decrypt(token)
+                            decoded = message_cipher.decrypt(token)
                             await writer.write(decoded)
                             received += len(decoded)
 
