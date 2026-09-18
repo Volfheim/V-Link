@@ -63,7 +63,7 @@ For a compatible file manager, use `http://<PC-IP>:<port>/webdav/`, any username
 | Mobile web / WebDAV | Browser or file manager connects to the PC | Session-token access over HTTP. Desktop Secure mode does not turn this into HTTPS. |
 | Optional relay | A separate server stores and forwards files | Update both PCs and the relay server for v2. Filenames, sizes and routing metadata remain visible to the relay. The reference server requires operator access controls and HTTPS. Legacy transfers retain the old key-disclosure flaw. |
 
-Source v2.4.9 is being prepared for release; the download link may still serve v2.4.8 with the older key-disclosure issue. Update both PCs and any relay server together. If an older device must remain temporarily, explicitly enable **Settings → Security → Legacy compatibility (temporary)** on upgraded peers, only on a trusted network. Disable it when migration is complete. Legacy mode retains the original vulnerability; a failed authorization does not enable it automatically.
+[V-Link v2.4.9](https://github.com/Volfheim/V-Link/releases/tag/v2.4.9) includes the protocol update. Update both PCs and any relay server together. If an older device must remain temporarily, explicitly enable **Settings → Security → Legacy compatibility (temporary)** on upgraded peers, only on a trusted network. Disable it when migration is complete. Legacy mode retains the original vulnerability; a failed authorization does not enable it automatically.
 
 ### Clipboard sharing
 
