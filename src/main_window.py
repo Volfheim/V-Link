@@ -594,6 +594,8 @@ class MainWindow(QMainWindow):
     def _open_settings(self):
         old_port = self.settings.port
         old_secure_mode = self.settings.secure_mode
+        old_secure_secret = self.settings.get('secure_shared_secret', '')
+        old_legacy_secure = self.settings.get('allow_legacy_secure', False)
         old_nonstandard_mode = self.settings.nonstandard_network_mode
         old_relay_mode = self.settings.relay_mode
         old_relay_url = self.settings.relay_server_url
@@ -627,6 +629,8 @@ class MainWindow(QMainWindow):
         restart_needed = (
             old_port != self.settings.port
             or old_secure_mode != self.settings.secure_mode
+            or old_secure_secret != self.settings.get('secure_shared_secret', '')
+            or old_legacy_secure != self.settings.get('allow_legacy_secure', False)
             or old_nonstandard_mode != self.settings.nonstandard_network_mode
             or old_relay_mode != self.settings.relay_mode
             or old_relay_url != self.settings.relay_server_url
@@ -882,6 +886,7 @@ class MainWindow(QMainWindow):
                 chunk_size_bytes=4 * 1024 * 1024,
                 verify_checksum=verify_checksum,
                 enable_encryption=secure_mode,
+                allow_legacy_secure=self.settings.get('allow_legacy_secure', False),
             )
             self.server.on_transfer_start = self._on_incoming_transfer_start
             self.server.on_transfer_progress = self._on_transfer_progress
@@ -916,6 +921,7 @@ class MainWindow(QMainWindow):
                 adaptive_profile=self.settings.adaptive_profile,
                 enable_encryption=secure_mode,
                 compatibility_mode=compatibility_mode,
+                allow_legacy_secure=self.settings.get('allow_legacy_secure', False),
             )
             self.client.on_transfer_start = self._on_outgoing_transfer_start
             self.client.on_transfer_progress = self._on_transfer_progress
@@ -939,6 +945,7 @@ class MainWindow(QMainWindow):
                         download_dir=self.settings.download_dir,
                         secure_mode=secure_mode,
                         auth_token=auth_secret,
+                        allow_legacy_secure=self.settings.get('allow_legacy_secure', False),
                     )
                     self.relay.on_peer_added = self._on_relay_peer_added
                     self.relay.on_peer_removed = self._on_relay_peer_removed

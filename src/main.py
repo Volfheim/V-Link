@@ -54,6 +54,8 @@ def _write_ready_flag(path: str):
 
 
 if "--self-test" in sys.argv:
+    from security.self_test import run as protocol_self_test
+    protocol_self_test()
     sys.exit(0)
 
 _update_ready_flag = _consume_arg("--update-ready-flag")

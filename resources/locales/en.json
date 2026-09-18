@@ -1,4 +1,10 @@
 {
+  "Ключ безопасного режима:": "Secure mode key:",
+  "Одинаковый ключ на обоих устройствах": "Use the same key on both devices",
+  "Скопируйте этот ключ на второе устройство, если включаете безопасный режим": "Copy this key to the other device when enabling Secure mode",
+  "Включает шифрование потока, проверку целостности и общий ключ между устройствами. Для передачи ключ должен совпадать на обоих ПК.": "Enables file encryption and integrity checks with a shared key. Both PCs must use the same key.",
+  "Совместимость со старыми версиями (временно)": "Legacy compatibility (temporary)",
+  "Включайте только для старого устройства в доверенной сети: старый протокол раскрывает ключ шифрования. Обновите оба ПК и relay-сервер, затем отключите совместимость.": "Enable only for an old device on a trusted network: the old protocol exposes the encryption key. Update both PCs and the relay server, then disable compatibility.",
   "Как в системе": "System default",
   "Русский": "Russian",
   "Английский": "English",

@@ -2,11 +2,18 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
-## [2.4.9] - 2026-09-16
+## [2.4.9] - Unreleased
 ### Secure transport
 * Separated authentication and file-encryption key derivation in protocol v2.
-* Added temporary legacy v1 fallback for staged client upgrades.
-* Kept clipboard contents plaintext and documented relay metadata visibility.
+* Added an explicit, default-off legacy compatibility setting for staged upgrades on trusted networks.
+* Prevented automatic security downgrades after authorization failures and rejected plaintext uploads in Secure mode.
+* Added end-to-end loopback coverage for direct transfers, clipboard authentication and relay delivery.
+
+### Защищённая передача
+* В протоколе v2 разделён вывод ключей аутентификации и шифрования файлов.
+* Для поэтапного обновления в доверенной сети добавлена явная совместимость со старыми версиями; по умолчанию она выключена.
+* Устранён автоматический откат защиты при ошибке авторизации. Безопасный режим отклоняет незашифрованные загрузки.
+* Добавлены локальные проверки прямой передачи, аутентификации буфера обмена и доставки через relay.
 
 ## [2.4.8] - 2026-07-14
 ### File Transfers

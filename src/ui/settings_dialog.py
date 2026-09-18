@@ -223,6 +223,13 @@ class SettingsDialog(QDialog):
         secure_hint.setStyleSheet("color: #64748b; font-size: 11px;")
         security_layout.addWidget(secure_hint)
 
+        self.legacy_secure_check = CheckBoxWithMark(t("Совместимость со старыми версиями (временно)"))
+        security_layout.addWidget(self.legacy_secure_check)
+        legacy_hint = QLabel(t("Включайте только для старого устройства в доверенной сети: старый протокол раскрывает ключ шифрования. Обновите оба ПК и relay-сервер, затем отключите совместимость."))
+        legacy_hint.setWordWrap(True)
+        legacy_hint.setStyleSheet("color: #d99b45; font-size: 11px;")
+        security_layout.addWidget(legacy_hint)
+
         content_layout.addWidget(security_group)
 
         behavior_group = QGroupBox(t("Поведение"))
@@ -351,6 +358,7 @@ class SettingsDialog(QDialog):
         self.download_edit.setText(self.settings.get('download_dir', ''))
         self.secure_mode_check.setChecked(self.settings.get('secure_mode', False))
         self.secure_key_edit.setText(self.settings.get('secure_shared_secret', ''))
+        self.legacy_secure_check.setChecked(self.settings.get('allow_legacy_secure', False))
         self.nonstandard_network_check.setChecked(self.settings.get('nonstandard_network_mode', True))
         self.relay_mode_check.setChecked(self.settings.get('relay_mode', False))
         self.relay_url_edit.setText(self.settings.get('relay_server_url', ''))
@@ -373,6 +381,7 @@ class SettingsDialog(QDialog):
 
     def _toggle_secure_fields(self, enabled: bool):
         self.secure_key_edit.setEnabled(enabled)
+        self.legacy_secure_check.setEnabled(enabled)
 
     def _toggle_clipboard_options(self, enabled: bool):
         self.clipboard_image_check.setEnabled(enabled)
@@ -396,6 +405,7 @@ class SettingsDialog(QDialog):
             'download_dir': self.download_edit.text(),
             'secure_mode': self.secure_mode_check.isChecked(),
             'secure_shared_secret': secure_secret,
+            'allow_legacy_secure': self.legacy_secure_check.isChecked(),
             'nonstandard_network_mode': self.nonstandard_network_check.isChecked(),
             'relay_mode': self.relay_mode_check.isChecked(),
             'relay_server_url': relay_url,

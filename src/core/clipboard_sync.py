@@ -224,7 +224,8 @@ class ClipboardSyncManager(QObject):
             try:
                 url = f"http://{ip}:{int(port)}/clipboard"
                 async with self._session.post(url, data=body, headers=headers) as response:
-                    if response.status == 401 and self._auth_secret:
+                    if (response.status == 401 and self._auth_secret
+                            and self.settings.get("allow_legacy_secure", False)):
                         legacy_headers = {"Content-Type": "application/json", "X-Auth-Token": auth_token(self._auth_secret, "1")}
                         async with self._session.post(url, data=body, headers=legacy_headers):
                             pass

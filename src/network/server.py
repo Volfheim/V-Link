@@ -76,6 +76,7 @@ class TransferServer:
         chunk_size_bytes: int = CHUNK_SIZE,
         verify_checksum: bool = False,
         enable_encryption: bool = False,
+        allow_legacy_secure: bool = False,
     ):
         self.requested_port = port
         self.port = port
@@ -84,11 +85,15 @@ class TransferServer:
         self.chunk_size_bytes = max(64 * 1024, int(chunk_size_bytes))
         self.verify_checksum = verify_checksum
         self.enable_encryption = enable_encryption
+        self.allow_legacy_secure = bool(allow_legacy_secure)
+        if self.enable_encryption and not self.auth_token:
+            raise ValueError("Secure mode requires a shared key")
         self._cipher: Optional[Fernet] = None
         self._legacy_cipher: Optional[Fernet] = None
         if self.enable_encryption and self.auth_token:
             self._cipher = Fernet(fernet_key(self.auth_token))
-            self._legacy_cipher = Fernet(fernet_key(self.auth_token, "1"))
+            if self.allow_legacy_secure:
+                self._legacy_cipher = Fernet(fernet_key(self.auth_token, "1"))
         self.app = web.Application(client_max_size=0)  # No upload size limit
         self.runner: Optional[web.AppRunner] = None
         self.site: Optional[web.TCPSite] = None
@@ -1087,7 +1092,8 @@ class TransferServer:
             if self.auth_token:
                 provided_token = request.headers.get('X-Auth-Token', '')
                 auth_version = request.headers.get('X-Auth-Version')
-                if auth_matches(self.auth_token, provided_token, auth_version) is None:
+                if auth_matches(self.auth_token, provided_token, auth_version,
+                                allow_legacy=self.allow_legacy_secure) is None:
                     return web.json_response({'status': 'error', 'message': 'Unauthorized'}, status=401)
 
             payload = await request.json()
@@ -1139,7 +1145,8 @@ class TransferServer:
             if self.auth_token:
                 provided_token = request.headers.get('X-Auth-Token', '')
                 auth_version = request.headers.get('X-Auth-Version')
-                accepted_version = auth_matches(self.auth_token, provided_token, auth_version)
+                accepted_version = auth_matches(self.auth_token, provided_token, auth_version,
+                                                allow_legacy=self.allow_legacy_secure)
                 if accepted_version is None:
                     return web.json_response({'status': 'error', 'message': 'Unauthorized'}, status=401)
                 if accepted_version == '1':
@@ -1155,6 +1162,8 @@ class TransferServer:
             content_encoding = request.headers.get('X-Content-Encoding', '').lower()
             expected_sha256 = request.headers.get('X-File-SHA256', '').lower()
             encrypted_mode = request.headers.get('X-Encrypted', '').lower() == 'fernet-frame'
+            if self.enable_encryption and not encrypted_mode:
+                return web.json_response({'status': 'error', 'message': 'Security mode mismatch: encrypted upload required'}, status=400)
             
             try:
                 filename = urllib.parse.unquote(filename_raw)
