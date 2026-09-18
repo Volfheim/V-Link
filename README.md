@@ -59,13 +59,15 @@ For a compatible file manager, use `http://<PC-IP>:<port>/webdav/`, any username
 | Mode | How it works | Protection and limits |
 | --- | --- | --- |
 | Desktop, default | Direct HTTP between PCs | Secure mode is off by default; file contents are unencrypted. |
-| Desktop, Secure mode | Direct file transfer with a shared key | New protocol versions derive authentication and encryption material separately; receivers temporarily accept the legacy v1 header for staged upgrades. Clipboard content remains plaintext and HTTP transport still requires a trusted network. |
+| Desktop, Secure mode | Direct file transfer with a shared key | Source v2.4.9 separates authentication and file-encryption keys and rejects plaintext uploads. Legacy compatibility is off by default. Use a generated random shared key and trusted networks: HTTP metadata and authentication tokens remain observable and replayable. |
 | Mobile web / WebDAV | Browser or file manager connects to the PC | Session-token access over HTTP. Desktop Secure mode does not turn this into HTTPS. |
-| Optional relay | A separate server stores and forwards files | Secure relay payloads use the versioned file-encryption key; the relay still sees filenames, sizes and routing metadata. The reference server needs operator access controls and HTTPS. |
+| Optional relay | A separate server stores and forwards files | Update both PCs and the relay server for v2. Filenames, sizes and routing metadata remain visible to the relay. The reference server requires operator access controls and HTTPS. Legacy transfers retain the old key-disclosure flaw. |
+
+Source v2.4.9 is being prepared for release; the download link may still serve v2.4.8 with the older key-disclosure issue. Update both PCs and any relay server together. If an older device must remain temporarily, explicitly enable **Settings → Security → Legacy compatibility (temporary)** on upgraded peers, only on a trusted network. Disable it when migration is complete. Legacy mode retains the original vulnerability; a failed authorization does not enable it automatically.
 
 ### Clipboard sharing
 
-**Text sync is enabled by default; image sync is disabled.** Changes are sent to reachable desktops found by local discovery, rather than only the desktop selected for file transfer. Clipboard sync uses the local HTTP endpoints, including when relay file sharing is enabled. In Secure mode it uses versioned authentication with a temporary legacy fallback, but **does not encrypt clipboard content**.
+**Text sync is enabled by default; image sync is disabled.** Changes are sent to reachable desktops found by local discovery, rather than only the desktop selected for file transfer. Clipboard sync uses the local HTTP endpoints, including when relay file sharing is enabled. In Secure mode it uses versioned authentication with legacy fallback only when explicitly enabled, but **does not encrypt clipboard content**.
 
 Turn it off in **Settings → Clipboard** before copying sensitive text or using an untrusted network.
 

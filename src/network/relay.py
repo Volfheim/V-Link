@@ -5,7 +5,6 @@ Optional relay transport for restrictive networks (guest/campus/AP isolation).
 
 import asyncio
 import base64
-import hashlib
 import os
 import time
 import uuid
@@ -35,6 +34,7 @@ class RelayClient:
         download_dir: str,
         secure_mode: bool = False,
         auth_token: str = "",
+        allow_legacy_secure: bool = False,
     ):
         self.server_url = (server_url or "").strip().rstrip("/")
         self.channel = (channel or "").strip() or "default"
@@ -43,12 +43,16 @@ class RelayClient:
         self.download_dir = download_dir or str(Path.home() / "Downloads" / "V-Link")
         self.secure_mode = bool(secure_mode)
         self.auth_token = (auth_token or "").strip()
+        self.allow_legacy_secure = bool(allow_legacy_secure)
+        if self.secure_mode and not self.auth_token:
+            raise ValueError("Secure mode requires a shared key")
 
         self._cipher: Optional[Fernet] = None
         self._legacy_cipher: Optional[Fernet] = None
         if self.secure_mode and self.auth_token:
             self._cipher = Fernet(fernet_key(self.auth_token))
-            self._legacy_cipher = Fernet(fernet_key(self.auth_token, "1"))
+            if self.allow_legacy_secure:
+                self._legacy_cipher = Fernet(fernet_key(self.auth_token, "1"))
 
         self._session_lock = asyncio.Lock()
         self.session: Optional[aiohttp.ClientSession] = None
@@ -295,8 +299,12 @@ class RelayClient:
             raise ValueError(error)
 
         protocol_version = str(peer.get("protocol_version", "1") if peer else PROTOCOL_VERSION)
-        if protocol_version not in ("1", PROTOCOL_VERSION):
-            protocol_version = PROTOCOL_VERSION
+        if self.secure_mode and not peer:
+            raise ValueError("Secure relay peer is unknown; refresh the device list")
+        if self.secure_mode and protocol_version not in ("1", PROTOCOL_VERSION):
+            raise ValueError("Unsupported secure protocol version")
+        if self.secure_mode and protocol_version == "1" and not self.allow_legacy_secure:
+            raise ValueError("Security mode mismatch: update the peer and relay server, or explicitly enable legacy compatibility on a trusted network")
         transfer_cipher = self._legacy_cipher if protocol_version == "1" else self._cipher
 
         total_size = os.path.getsize(filepath)
@@ -384,6 +392,12 @@ class RelayClient:
             await self._ack(msg_id, "error", "SECURE_MODE_MISMATCH")
             if self.on_transfer_error:
                 self.on_transfer_error(transfer_id, "Security mode mismatch with relay peer")
+            return
+
+        if self.secure_mode and (not encrypted or (protocol_version == "1" and not self.allow_legacy_secure)):
+            await self._ack(msg_id, "error", "SECURE_MODE_MISMATCH")
+            if self.on_transfer_error:
+                self.on_transfer_error(transfer_id, "Security mode mismatch: encrypted v2 payload required; legacy compatibility is disabled")
             return
 
         if encrypted and protocol_version not in ("1", PROTOCOL_VERSION):

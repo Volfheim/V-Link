@@ -16,6 +16,7 @@ DEFAULT_SETTINGS = {
     'download_dir': str(Path.home() / "Downloads" / "V-Link"),
     'secure_mode': False,
     'secure_shared_secret': '',
+    'allow_legacy_secure': False,
     'nonstandard_network_mode': False,
     'relay_mode': False,
     'relay_server_url': '',

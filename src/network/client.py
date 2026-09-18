@@ -52,6 +52,7 @@ class TransferClient:
         adaptive_profile: Optional[dict] = None,
         enable_encryption: bool = False,
         compatibility_mode: bool = False,
+        allow_legacy_secure: bool = False,
     ):
         self.auth_token = (auth_token or "").strip()
         self.base_chunk_size_bytes = max(64 * 1024, int(base_chunk_size_bytes))
@@ -59,6 +60,9 @@ class TransferClient:
         self.auto_tune = auto_tune
         self.enable_encryption = enable_encryption
         self.compatibility_mode = compatibility_mode
+        self.allow_legacy_secure = bool(allow_legacy_secure)
+        if self.enable_encryption and not self.auth_token:
+            raise ValueError("Secure mode requires a shared key")
         self._cipher: Optional[Fernet] = None
         if self.enable_encryption and self.auth_token:
             self._cipher = Fernet(fernet_key(self.auth_token))
@@ -224,9 +228,12 @@ class TransferClient:
                 return result_id
             except aiohttp.ClientError as e:
                 last_error = e
-                if getattr(e, "status", None) == 401 and self.auth_token and protocol_version == PROTOCOL_VERSION:
+                if (getattr(e, "status", None) == 401 and self.auth_token
+                        and self.allow_legacy_secure and protocol_version == PROTOCOL_VERSION):
                     protocol_version = "1"
                     continue
+                if getattr(e, "status", None) in (401, 403, 426):
+                    break
                 if attempt < MAX_RETRIES - 1:
                     await self.stop()
                     await self._ensure_session()
