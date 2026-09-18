@@ -2,7 +2,7 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
-## [2.4.9] - Unreleased
+## [2.4.9] - 2026-09-18
 ### Secure transport
 * Separated authentication and file-encryption key derivation in protocol v2.
 * Added an explicit, default-off legacy compatibility setting for staged upgrades on trusted networks.
