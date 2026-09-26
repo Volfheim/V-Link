@@ -291,6 +291,17 @@
             border-left: 3px solid var(--success);
         }
 
+        .file-card.downloading {
+            border-left: 3px solid var(--info);
+            pointer-events: none;
+            opacity: 0.78;
+        }
+
+        .file-card.downloading .download-badge {
+            color: var(--info);
+            background: rgba(14, 165, 233, 0.14);
+        }
+
         .file-icon {
             width: 44px;
             height: 44px;
@@ -717,8 +728,32 @@
         document.getElementById('downloadFolderText').textContent = tr('downloadFolder', 'Download ZIP');
 
         // State
+        const LARGE_DOWNLOAD_THRESHOLD = 50 * 1024 * 1024;
+        const LARGE_FOLDER_THRESHOLD = 100 * 1024 * 1024;
+        const MAX_FOLDER_DOWNLOAD_SIZE = 4 * 1024 * 1024 * 1024;
+        const IS_ANDROID = /Android/i.test(navigator.userAgent);
+        const ANDROID_ARCHIVE_EXTENSIONS = new Set([
+            'zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'iso',
+        ]);
+        const activeDownloads = new Set();
         let currentPath = '';
         let uploadProgressResetTimer = null;
+
+        function needsAndroidArchiveCompatibility(filename, size) {
+            if (!IS_ANDROID || size <= LARGE_DOWNLOAD_THRESHOLD) return false;
+            const extension = String(filename || '').split('.').pop().toLowerCase();
+            return ANDROID_ARCHIVE_EXTENSIONS.has(extension);
+        }
+
+        function scheduleNativeDownloadUnlock(downloadKey, element = null) {
+            setTimeout(() => {
+                activeDownloads.delete(downloadKey);
+                if (element) {
+                    element.classList.remove('downloading');
+                    element.removeAttribute('aria-disabled');
+                }
+            }, 2000);
+        }
 
         function resetUploadProgress() {
             if (uploadProgressResetTimer !== null) {
@@ -941,10 +976,24 @@
                     const fullPath = path ? path + '/' + item.name : item.name;
                     const dlKey = fullPath;
                     const isDl = isDownloaded(dlKey, item.size, item.mtime);
-                    const cardClass = isDl ? 'file-card downloaded' : 'file-card';
+                    const isDirect = item.size > LARGE_DOWNLOAD_THRESHOLD;
+                    const useArchiveCompat = needsAndroidArchiveCompatibility(item.name, item.size);
+                    const isActive = activeDownloads.has(dlKey);
+                    const cardClass = [
+                        'file-card',
+                        isDl ? 'downloaded' : '',
+                        isActive ? 'downloading' : '',
+                    ].filter(Boolean).join(' ');
                     const meta = `${humanSize(item.size)} • ${new Date(item.mtime * 1000).toLocaleDateString()}`;
+                    const compatibilityQuery = useArchiveCompat ? '&compat=1' : '';
+                    const directUrl = `/api/mobile/download/${encodeURIComponent(fullPath)}?token=${encodeURIComponent(TOKEN)}${compatibilityQuery}`;
+                    const directName = useArchiveCompat ? `${safeName}.txt` : safeName;
+                    const tag = isDirect ? 'a' : 'div';
+                    const directAttrs = isDirect
+                        ? ` href="${escapeHtml(directUrl)}" download="${directName}"`
+                        : '';
                     return `
-                    <div class="${cardClass}" data-type="file" data-path="${escapeHtml(fullPath)}" data-name="${safeName}" data-size="${item.size}" data-mtime="${item.mtime}">
+                    <${tag} class="${cardClass}" data-type="file" data-direct="${isDirect ? '1' : '0'}" data-compat="${useArchiveCompat ? '1' : '0'}" data-path="${escapeHtml(fullPath)}" data-name="${safeName}" data-size="${item.size}" data-mtime="${item.mtime}"${directAttrs}>
                         <div class="file-icon">${getFileIcon(item.name)}</div>
                         <div class="file-info">
                             <div class="file-name" title="${safeName}">${safeName}</div>
@@ -953,7 +1002,7 @@
                         <div class="file-action">
                             ${isDl ? '<span class="check-badge"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' : '<span class="download-badge"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></span>'}
                         </div>
-                    </div>`;
+                    </${tag}>`;
                 }
             }).join('');
 
@@ -963,8 +1012,29 @@
             });
 
             dom.fileList.querySelectorAll('.file-card[data-type="file"]').forEach(el => {
-                el.addEventListener('click', () => {
-                    downloadFile(el.dataset.path, el.dataset.name, Number(el.dataset.size), Number(el.dataset.mtime));
+                el.addEventListener('click', event => {
+                    const filePath = el.dataset.path;
+                    if (activeDownloads.has(filePath)) {
+                        event.preventDefault();
+                        return;
+                    }
+                    if (el.dataset.direct === '1') {
+                        activeDownloads.add(filePath);
+                        el.classList.add('downloading');
+                        el.setAttribute('aria-disabled', 'true');
+                        scheduleNativeDownloadUnlock(filePath, el);
+                        if (el.dataset.compat === '1') {
+                            const hint = tr(
+                                'archiveCompatHint',
+                                'Chrome will save {name}.txt. Remove the final .txt after downloading.'
+                            ).replace('{name}', el.dataset.name);
+                            showToast(hint, 'success');
+                            return;
+                        }
+                        showToast(tr('downloading', 'Downloading...') + ': ' + el.dataset.name, 'success');
+                        return;
+                    }
+                    downloadFile(filePath, el.dataset.name, Number(el.dataset.size), Number(el.dataset.mtime));
                 });
             });
         }
@@ -972,22 +1042,10 @@
         // --- Download with progress ---
         async function downloadFile(filePath, displayName, size, mtime) {
             const url = `/api/mobile/download/${encodeURIComponent(filePath)}?token=${encodeURIComponent(TOKEN)}`;
-            
-            // Если файл больше 50 МБ, качаем напрямую без JS-буферизации в Blob
-            if (size > 50 * 1024 * 1024) {
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = displayName || filePath.split('/').pop() || 'download';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                
-                // Отмечаем как скачанный
-                markDownloaded(filePath, size, mtime);
-                showToast(tr('downloaded', 'Downloaded') + ': ' + (displayName || filePath), 'success');
-                setTimeout(() => browseTo(currentPath), 1000);
+            if (activeDownloads.has(filePath)) {
                 return;
             }
+            activeDownloads.add(filePath);
 
             try {
                 dom.dlProgress.classList.add('active');
@@ -1036,6 +1094,7 @@
             } catch (e) {
                 showToast(tr('networkError', 'Download error') + ': ' + e.message, 'error');
             } finally {
+                activeDownloads.delete(filePath);
                 dom.dlProgress.classList.remove('active');
             }
         }
@@ -1043,33 +1102,57 @@
         async function downloadCurrentFolder() {
             if (!currentPath) return;
             const folderName = currentPath.split('/').pop() || 'download';
+            const downloadKey = `folder:${currentPath}`;
+            if (activeDownloads.has(downloadKey)) return;
+            activeDownloads.add(downloadKey);
+            let keepLocked = false;
             try {
                 dom.dlProgress.classList.add('active');
                 dom.dlProgressTitle.textContent = tr('preparing', 'Preparing ZIP...');
                 dom.dlProgressFill.style.width = '0%';
                 dom.dlProgressMeta.textContent = folderName + '.zip';
 
-                const url = `/api/mobile/download-folder/${encodeURIComponent(currentPath)}?token=${encodeURIComponent(TOKEN)}`;
-                const res = await fetch(url);
-
-                if (!res.ok) {
-                    const data = await res.json().catch(() => ({}));
-                    throw new Error(data.message || `HTTP ${res.status}`);
+                const infoUrl = `/api/mobile/file-info/${encodeURIComponent(currentPath)}?token=${encodeURIComponent(TOKEN)}`;
+                const infoRes = await fetch(infoUrl);
+                const info = await infoRes.json().catch(() => ({}));
+                if (!infoRes.ok || info.status !== 'ok') {
+                    throw new Error(info.message || `HTTP ${infoRes.status}`);
+                }
+                const rawSize = Number(info.size) || 0;
+                if (rawSize > MAX_FOLDER_DOWNLOAD_SIZE) {
+                    throw new Error(tr('folderTooLarge', 'Folder is too large'));
                 }
 
-                const rawSize = Number(res.headers.get('X-Folder-Raw-Size')) || 0;
-                
+                const useArchiveCompat = IS_ANDROID && rawSize > LARGE_FOLDER_THRESHOLD;
+                const compatibilityQuery = useArchiveCompat ? '&compat=1' : '';
+                const url = `/api/mobile/download-folder/${encodeURIComponent(currentPath)}?token=${encodeURIComponent(TOKEN)}${compatibilityQuery}`;
                 // Если размер папки > 100 МБ, качаем ZIP напрямую без буферизации в Blob вкладки JS
-                if (rawSize > 100 * 1024 * 1024) {
+                if (rawSize > LARGE_FOLDER_THRESHOLD) {
                     dom.dlProgress.classList.remove('active');
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = folderName + '.zip';
+                    a.download = folderName + (useArchiveCompat ? '.zip.txt' : '.zip');
                     document.body.appendChild(a);
                     a.click();
                     a.remove();
-                    showToast(tr('downloading', 'Downloading') + ': ' + folderName + '.zip', 'success');
+                    keepLocked = true;
+                    scheduleNativeDownloadUnlock(downloadKey);
+                    if (useArchiveCompat) {
+                        const hint = tr(
+                            'archiveCompatHint',
+                            'Chrome will save {name}.txt. Remove the final .txt after downloading.'
+                        ).replace('{name}', folderName + '.zip');
+                        showToast(hint, 'success');
+                    } else {
+                        showToast(tr('downloading', 'Downloading') + ': ' + folderName + '.zip', 'success');
+                    }
                     return;
+                }
+
+                const res = await fetch(url);
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.message || `HTTP ${res.status}`);
                 }
 
                 const reader = res.body.getReader();
@@ -1102,6 +1185,7 @@
             } catch (e) {
                 showToast(tr('folderTooLarge', 'Error') + ': ' + e.message, 'error');
             } finally {
+                if (!keepLocked) activeDownloads.delete(downloadKey);
                 dom.dlProgress.classList.remove('active');
             }
         }

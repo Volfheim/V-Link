@@ -2,18 +2,24 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
-## [2.4.9] - 2026-09-18
-### Secure transport
+## [2.4.9] - 2026-09-26
+### Secure transport and mobile downloads
 * Separated authentication and file-encryption key derivation in protocol v2.
 * Added an explicit, default-off legacy compatibility setting for staged upgrades on trusted networks.
 * Prevented automatic security downgrades after authorization failures and rejected plaintext uploads in Secure mode.
-* Added end-to-end loopback coverage for direct transfers, clipboard authentication and relay delivery.
+* Added an Android-compatible download option for large archives over local HTTP.
+* Prevented duplicate large-file and folder downloads from the mobile page.
+* Fixed the Mobile button failing when the packaged QR image backend was unavailable.
+* Improved desktop window repainting when resized.
 
-### Защищённая передача
+### Защищённая передача и загрузки на телефон
 * В протоколе v2 разделён вывод ключей аутентификации и шифрования файлов.
 * Для поэтапного обновления в доверенной сети добавлена явная совместимость со старыми версиями; по умолчанию она выключена.
 * Устранён автоматический откат защиты при ошибке авторизации. Безопасный режим отклоняет незашифрованные загрузки.
-* Добавлены локальные проверки прямой передачи, аутентификации буфера обмена и доставки через relay.
+* Для больших архивов добавлен режим загрузки на Android через локальный HTTP.
+* Предотвращены повторные загрузки больших файлов и папок с мобильной страницы.
+* Исправлена кнопка «Мобильник», которая не открывала окно при отсутствии графического модуля QR-кода в сборке.
+* Улучшена перерисовка окна после изменения его размера.
 
 ## [2.4.8] - 2026-07-14
 ### File Transfers

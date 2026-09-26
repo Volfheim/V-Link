@@ -429,6 +429,9 @@ class TransferServer:
             "sortBySize": t("По размеру"),
             "queueProgress": t("Загружено: {index} из {total} файлов"),
             "fileSkipped": t("Пропущен (уже загружен): {name}"),
+            "archiveCompatHint": t(
+                "Chrome сохранит {name}.txt. После скачивания удалите последний .txt."
+            ),
             "webdavHelpTitle": t("Как скачать большие папки (500 ГБ)"),
             "webdavHelpBody": t(
                 "Вы можете подключить этот компьютер как сетевую папку (WebDAV) на вашем телефоне:<br>"
@@ -473,15 +476,21 @@ class TransferServer:
         return self._mobile_template_cache
 
     async def _handle_mobile_index(self, request: web.Request) -> web.Response:
+        headers = {
+            "Cache-Control": "no-store, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
         token = self._extract_mobile_token(request)
         if not self._mobile_token_valid(token):
             return web.Response(
                 text=self._get_forbidden_html(),
                 content_type="text/html",
                 status=403,
+                headers=headers,
             )
         html = self._load_mobile_html()
-        return web.Response(text=html, content_type="text/html")
+        return web.Response(text=html, content_type="text/html", headers=headers)
 
     async def _handle_mobile_files(self, request: web.Request) -> web.Response:
         token = self._extract_mobile_token(request)
@@ -878,12 +887,18 @@ class TransferServer:
         if not path.exists() or not path.is_file():
             return web.json_response({"status": "error", "message": "File not found"}, status=404)
 
-        response = web.FileResponse(path)
         safe_download_name = (os.path.basename(name) or "download").replace('"', "'")
-        quoted_name = urllib.parse.quote(safe_download_name)
+        compatibility_mode = request.query.get("compat", "") == "1"
+        response_name = f"{safe_download_name}.txt" if compatibility_mode else safe_download_name
+        quoted_name = urllib.parse.quote(response_name)
+        response = web.FileResponse(path)
         response.headers["Content-Disposition"] = (
-            f'attachment; filename="{safe_download_name}"; filename*=UTF-8\'\'{quoted_name}'
+            f'attachment; filename="{response_name}"; filename*=UTF-8\'\'{quoted_name}'
         )
+        if compatibility_mode:
+            response.headers["Content-Type"] = "application/octet-stream"
+        response.headers["Cache-Control"] = "private, no-transform"
+        response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
     async def _handle_mobile_browse(self, request: web.Request) -> web.Response:
@@ -1017,14 +1032,20 @@ class TransferServer:
 
         folder_name = target_dir.name or "download"
         safe_name = folder_name.replace('"', "'")
-        quoted_name = urllib.parse.quote(safe_name)
+        compatibility_mode = request.query.get("compat", "") == "1"
+        response_name = f"{safe_name}.zip"
+        if compatibility_mode:
+            response_name += ".txt"
+        quoted_name = urllib.parse.quote(response_name)
 
         response = web.StreamResponse(
             status=200,
             reason='OK',
             headers={
-                'Content-Type': 'application/zip',
-                'Content-Disposition': f'attachment; filename="{safe_name}.zip"; filename*=UTF-8\'\'{quoted_name}.zip',
+                'Content-Type': 'application/octet-stream' if compatibility_mode else 'application/zip',
+                'Content-Disposition': f'attachment; filename="{response_name}"; filename*=UTF-8\'\'{quoted_name}',
+                'Cache-Control': 'private, no-transform',
+                'X-Content-Type-Options': 'nosniff',
                 'X-Folder-File-Count': str(file_count),
                 'X-Folder-Raw-Size': str(total_size),
             }

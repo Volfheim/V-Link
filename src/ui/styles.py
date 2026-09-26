@@ -25,6 +25,10 @@ QMainWindow {
     background-color: #1a1a2e;
 }
 
+QWidget#mainContent {
+    background-color: #1a1a2e;
+}
+
 QWidget {
     color: #f8fafc;
     font-family: 'Segoe UI', sans-serif;

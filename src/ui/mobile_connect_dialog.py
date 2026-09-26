@@ -3,10 +3,8 @@ V-Link - Mobile connect dialog.
 Shows URL and QR code for web-based mobile file transfer.
 """
 
-from io import BytesIO
-
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtGui import QImage, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -152,22 +150,23 @@ class MobileConnectDialog(QDialog):
         )
         qr.add_data(self._url)
         qr.make(fit=True)
-        img = qr.make_image(fill_color="black", back_color="white")
-
-        buff = BytesIO()
-        img.save(buff, format="PNG")
-        raw = buff.getvalue()
-
-        pix = QPixmap()
-        pix.loadFromData(raw, "PNG")
-        if pix.isNull():
-            self.qr_label.setText(t("Не удалось построить QR-код."))
-            return
-
-        scaled = pix.scaled(
-            320,
-            320,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self.qr_label.setPixmap(scaled)
+        matrix = qr.get_matrix()
+        module_size = max(1, 320 // len(matrix))
+        image_size = len(matrix) * module_size
+        image = QImage(image_size, image_size, QImage.Format.Format_RGB32)
+        image.fill(Qt.GlobalColor.white)
+        painter = QPainter(image)
+        try:
+            for y, row in enumerate(matrix):
+                for x, dark in enumerate(row):
+                    if dark:
+                        painter.fillRect(
+                            x * module_size,
+                            y * module_size,
+                            module_size,
+                            module_size,
+                            Qt.GlobalColor.black,
+                        )
+        finally:
+            painter.end()
+        self.qr_label.setPixmap(QPixmap.fromImage(image))
