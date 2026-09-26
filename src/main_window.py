@@ -88,6 +88,8 @@ class MainWindow(QMainWindow):
         )
 
     def _ensure_autostart_registration(self):
+        if os.environ.get("VLINK_SKIP_AUTOSTART_SYNC") == "1":
+            return
         try:
             # Normalize autostart state on every startup:
             # rewrites stale registry command (e.g. legacy "--autostart") and
@@ -123,6 +125,8 @@ class MainWindow(QMainWindow):
 
     def _setup_ui(self):
         central = QWidget()
+        central.setObjectName("mainContent")
+        central.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setCentralWidget(central)
 
         layout = QVBoxLayout(central)
