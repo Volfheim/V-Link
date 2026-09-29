@@ -2,6 +2,15 @@
 
 Все заметные изменения в проекте V-Link будут документированы в этом файле.
 
+## [2.4.10] - 2026-09-29
+### Desktop dialogs and mobile interface
+* Fixed message and update dialogs rendering as blank white windows on Windows light themes.
+* Added a packaged-resource check and additional mobile interface lookup paths.
+
+### Диалоги и мобильный интерфейс
+* Исправлено отображение пустых белых окон сообщений и обновления при светлой теме Windows.
+* Добавлена проверка ресурсов EXE и дополнительные пути поиска мобильного интерфейса.
+
 ## [2.4.9] - 2026-09-26
 ### Secure transport and mobile downloads
 * Separated authentication and file-encryption key derivation in protocol v2.

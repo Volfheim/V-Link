@@ -78,6 +78,7 @@ from qasync import QEventLoop
 
 from core import Settings, i18n, t
 from main_window import MainWindow
+from ui.styles import get_stylesheet
 
 
 def resource_path(relative_path: str) -> str:
@@ -100,6 +101,7 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("V-Link")
     app.setOrganizationName("Volfheim")
+    app.setStyleSheet(get_stylesheet())
     settings = Settings()
     i18n.load(settings.language)
 

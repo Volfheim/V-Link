@@ -1,7 +1,9 @@
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import QApplication, QLabel, QMessageBox
 
 from main_window import MainWindow
+from ui.styles import get_stylesheet
 
 
 class MobileServerStub:
@@ -57,3 +59,19 @@ def test_window_resizes_and_mobile_button_opens_dialog(monkeypatch):
             window.mobile_dialog.close()
         window.close()
     assert server.disabled
+
+
+def test_message_boxes_keep_text_contrast_in_light_windows_theme():
+    app = QApplication.instance() or QApplication([])
+    assert app is not None
+    app.setStyleSheet(get_stylesheet())
+    box = QMessageBox(QMessageBox.Icon.Information, "V-Link", "Проверка сообщения")
+    try:
+        background = box.palette().color(box.backgroundRole())
+        assert background != QColor("#ffffff")
+        label = box.findChild(QLabel, "qt_msgbox_label")
+        assert label is not None
+        foreground = label.palette().color(label.foregroundRole())
+        assert foreground != QColor("#ffffff")
+    finally:
+        box.close()

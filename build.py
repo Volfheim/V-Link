@@ -28,8 +28,9 @@ def _build_environment():
 def _verify_bundle(exe_path):
     from PyInstaller.archive.readers import CArchiveReader
 
+    archive = CArchiveReader(str(exe_path))
     bundled_icu = [
-        name for name in CArchiveReader(str(exe_path)).toc
+        name for name in archive.toc
         if Path(name.replace("\\", "/")).name.lower().startswith("icu")
         and name.lower().endswith(".dll")
     ]
@@ -37,6 +38,16 @@ def _verify_bundle(exe_path):
         raise RuntimeError(
             "Unexpected ICU DLLs in V-Link.exe: " + ", ".join(sorted(bundled_icu))
         )
+    required = {
+        "ui/web_interface.html",
+        "resources/logo.png",
+        "resources/locales/en.json",
+        "resources/locales/ru.json",
+    }
+    normalized = {name.replace("\\", "/") for name in archive.toc}
+    missing = sorted(required - normalized)
+    if missing:
+        raise RuntimeError("Missing required packaged resources: " + ", ".join(missing))
 
 
 def build():

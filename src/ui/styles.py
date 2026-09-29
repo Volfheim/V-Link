@@ -29,6 +29,17 @@ QWidget#mainContent {
     background-color: #1a1a2e;
 }
 
+/* Keep native message boxes readable when Windows uses a light theme. */
+QMessageBox, QProgressDialog {
+    background-color: #1a1a2e;
+    color: #f8fafc;
+}
+
+QMessageBox QLabel, QProgressDialog QLabel {
+    color: #f8fafc;
+    background-color: transparent;
+}
+
 QWidget {
     color: #f8fafc;
     font-family: 'Segoe UI', sans-serif;

@@ -16,6 +16,7 @@ import socket
 import errno
 import ipaddress
 import subprocess
+import importlib.resources
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -449,9 +450,22 @@ class TransferServer:
             return self._mobile_template_cache
 
         candidates = []
-        if hasattr(sys, "_MEIPASS"):
-            candidates.append(Path(sys._MEIPASS) / "ui" / "web_interface.html")
-        candidates.append(Path(__file__).resolve().parent.parent / "ui" / "web_interface.html")
+        meipass = getattr(sys, "_MEIPASS", "")
+        if meipass:
+            bundle_root = Path(meipass)
+            candidates.extend(
+                (
+                    bundle_root / "ui" / "web_interface.html",
+                    bundle_root / "web_interface.html",
+                )
+            )
+        source_root = Path(__file__).resolve().parent.parent
+        candidates.extend(
+            (
+                source_root / "ui" / "web_interface.html",
+                Path.cwd() / "ui" / "web_interface.html",
+            )
+        )
 
         for path in candidates:
             try:
@@ -465,8 +479,26 @@ class TransferServer:
                     )
                     self._mobile_template_cache = rendered
                     return self._mobile_template_cache
-            except Exception:
+            except Exception as exc:
+                print(f"Mobile web interface load failed from {path}: {exc}")
                 continue
+
+        # PyInstaller can expose package data through the package loader even
+        # when the temporary extraction path is not the expected layout.
+        try:
+            raw = importlib.resources.files("ui").joinpath("web_interface.html").read_text(
+                encoding="utf-8"
+            )
+            rendered = raw.replace("{{LOGO_BASE64}}", self._load_logo_base64())
+            rendered = rendered.replace("{{HTML_LANG}}", "en" if i18n.language == "en" else "ru")
+            rendered = rendered.replace(
+                "{{I18N_JSON}}",
+                json.dumps(self._mobile_i18n_map(), ensure_ascii=False),
+            )
+            self._mobile_template_cache = rendered
+            return self._mobile_template_cache
+        except Exception as exc:
+            print(f"Mobile web interface package load failed: {exc}")
 
         self._mobile_template_cache = (
             "<!doctype html><html><body>"
